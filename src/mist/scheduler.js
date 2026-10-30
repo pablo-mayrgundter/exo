@@ -1,35 +1,41 @@
-// The Mist: a gift economy of compute.
+// The Mist: a gift economy of compute, run as a time-sharing system.
 //
-// Being here already costs something (rendering, the connection, scripts):
-// that's implicit, and so is the small baseline each simulation in the
-// world runs for everyone. On top of that a visitor sets a budget, a share
-// of one CPU core, and gives it to things by clicking their $ buttons. The
-// budget is split among the things given to, in proportion to the gifts;
-// there are only so many slots (cores to spare), and gifts beyond them
-// queue. When nobody gives to a thing it drops back to its implicit rate.
+// The bar's things are jobs on one vCPU, the 6502 under the street, whose
+// kernel (chip/vcpu.js) gives each job its share of quanta per turn. Two
+// kinds of compute pay for it:
 //
-// Every frame a simulation finishes comes with a receipt: the frame, its
-// cycles, how many were given, and hashes of its input and output. A frame
-// a visitor paid at least a quarter of carries their name.
+//   - system: what the world runs for everyone, a share of the visitor's
+//     core, split among the jobs by their system weights;
+//   - donation: a budget the visitor sets, also a share of a core, given
+//     to jobs by tapping their chip tokens. It splits among the jobs given
+//     to, in proportion to the gifts; only so many get it at once (slots),
+//     the rest queue. With nobody donating, a job runs on its system share.
+//
+// Both become kernel shares on the same scale, so a job's share of the
+// vCPU is (system + donated) / total, and the vCPU's duty on the host core
+// is system + donation. Every frame a job finishes comes with a receipt;
+// frames a visitor paid a quarter or more of carry their name.
 
 const KEY = 'exo.cafe/mist'
 const MAX_DUTY = 0.95
 const DONOR_SHARE = 0.25
 
-export class Sim {
+export class Job {
   /**
-   * @param {{id: string, name: string, place: string, implicit: number, worker: Worker,
-   *   verify?: (r: object) => boolean, unit?: string}} o
+   * @param {{id: string, name: string, place: string, weight: number, bytes?: number, unit?: string,
+   *   verify?: (r: object) => boolean}} o
    */
   constructor(o) {
     Object.assign(this, o)
     this.unit ??= 'frame'
-    this.gifts = 0 // this visitor's shares
-    this.explicit = 0 // duty given, 0..1 of a core
-    this.state = 'implicit' // 'implicit' | 'running' | 'queued'
+    this.bytes ??= 0
+    this.gifts = 0 // this visitor's
+    this.share = { system: 0, donated: 0 } // kernel shares
+    this.core = { system: 0, donated: 0 } // shares of the host's core
+    this.state = 'system' // 'system' | 'donated' | 'queued'
     this.tick = null
-    this.hz = 0 // half-cycles per wall second, smoothed
-    this.given = 0 // explicit half-cycles, all time this session
+    this.hz = 0 // vCPU cycles per wall second this job gets, smoothed
+    this.given = 0 // donated half-cycles, all time this session
     this.receipts = []
     this.listeners = []
   }
@@ -38,98 +44,121 @@ export class Sim {
 }
 
 export class Mist {
-  constructor({ donor }) {
-    this.donor = donor // { name } of this visitor
-    this.sims = new Map()
+  /** @param {{donor: {name: string}, worker: Worker, system: number}} o system: the vCPU's system duty */
+  constructor({ donor, worker, system = 0.35 }) {
+    this.donor = donor
+    this.worker = worker
+    this.system = system
+    this.jobs = [] // kernel order
     this.budget = 0 // share of one core
     this.order = [] // gift order, for slots and the queue
     this.slots = Math.max(1, Math.min(4, (navigator.hardwareConcurrency ?? 4) - 2))
-    this.implicitMain = 0 // measured: rendering and the rest, share of a core
+    this.main = 0 // measured: the main thread's share of a core
+    this.vcpuHz = 0 // vCPU cycles per wall second, smoothed
     this.mine = [] // receipts this visitor powered, newest first
+    this.changed = []
     try {
       const s = JSON.parse(localStorage.getItem(KEY))
       if (s) { this.budget = s.budget ?? 0; this.mine = s.mine ?? [] }
     } catch { /* storage may be blocked */ }
-    this.changed = []
+    worker.addEventListener('message', (e) => this.receive(e.data))
   }
 
-  /** @param {Sim} sim */
-  add(sim) {
-    this.sims.set(sim.id, sim)
-    sim.worker.addEventListener('message', (e) => this.receive(sim, e.data))
+  /** @param {Job} job */
+  add(job) {
+    this.jobs.push(job)
     this.allocate()
-    return sim
+    return job
   }
 
-  receive(sim, m) {
+  get(id) { return this.jobs.find((j) => j.id === id) }
+
+  receive(m) {
     if (m.type === 'tick') {
-      sim.tick = m
-      const hz = m.ran / (m.wallMs / 1000)
-      sim.hz = sim.hz ? sim.hz * 0.8 + hz * 0.2 : hz
-      sim.given = m.given
+      const hz = m.ran / 2 / (m.wallMs / 1000)
+      this.vcpuHz = this.vcpuHz ? this.vcpuHz * 0.8 + hz * 0.2 : hz
+      for (const t of m.jobs) {
+        const j = this.get(t.id)
+        if (!j) continue
+        j.tick = t
+        // Averaged over ~5 s: a kernel round lasts seconds, and a job
+        // between turns would otherwise read as stopped.
+        const jhz = t.ran / 2 / (m.wallMs / 1000)
+        const k = 1 - Math.exp(-(m.wallMs / 1000) / 5)
+        j.hz = j.hz ? j.hz + (jhz - j.hz) * k : jhz
+        j.given = t.given
+        j.listeners.forEach((f) => f({ type: 'tick', ...t, levels: m.levels, regs: m.regs }))
+      }
     } else if (m.type === 'receipt') {
+      const j = this.get(m.job)
+      if (!j) return
       const share = m.halfCycles ? m.given / m.halfCycles : 0
       const r = {
-        sim: sim.id, name: sim.name, frame: m.frame, t: m.t,
+        job: j.id, name: j.name, frame: m.frame, t: m.t,
         halfCycles: m.halfCycles, share,
         input: m.input, output: m.output, poked: m.poked,
-        // A frame this visitor paid at least a quarter of carries their name.
         donor: share >= DONOR_SHARE ? this.donor.name : null,
-        verified: sim.verify && !m.poked ? sim.verify(m) : null,
+        verified: j.verify && !m.poked ? j.verify(m) : null,
       }
-      sim.receipts.unshift(r)
-      sim.receipts.length = Math.min(sim.receipts.length, 20)
+      j.receipts.unshift(r)
+      j.receipts.length = Math.min(j.receipts.length, 20)
       if (r.donor) {
         this.mine.unshift(r)
         this.mine.length = Math.min(this.mine.length, 100)
         this.save()
       }
+      j.listeners.forEach((f) => f({ type: 'receipt', ...m, receipt: r }))
     }
-    sim.listeners.forEach((f) => f(m))
   }
 
-  /** Total explicit half-cycles given this session, across sims. */
-  get given() {
-    let g = 0
-    for (const s of this.sims.values()) g += s.given
-    return g
-  }
+  /** Donated half-cycles this session, across jobs. */
+  get given() { return this.jobs.reduce((n, j) => n + j.given, 0) }
 
   setBudget(b) {
-    this.budget = Math.max(0, Math.min(1, b))
+    this.budget = Math.max(0, Math.min(MAX_DUTY - this.system, b))
     this.allocate()
     this.save()
   }
 
-  /** Gives one more share to a sim. Returns its state afterwards. */
+  /** Gives one more share to a job. Returns its state afterwards. */
   give(id) {
-    const s = this.sims.get(id)
-    if (!s) return null
-    if (s.gifts === 0) this.order.push(id)
-    s.gifts = Math.min(8, s.gifts + 1)
+    const j = this.get(id)
+    if (!j) return null
+    if (j.gifts === 0) this.order.push(id)
+    j.gifts = Math.min(8, j.gifts + 1)
     this.allocate()
-    return s.state
+    return j.state
   }
 
-  /** Takes back a share; at none, the sim drops to implicit. */
+  /** Takes back a gift; at none, the job runs on its system share alone. */
   take(id) {
-    const s = this.sims.get(id)
-    if (!s || s.gifts === 0) return
-    s.gifts--
-    if (s.gifts === 0) this.order = this.order.filter((x) => x !== id)
+    const j = this.get(id)
+    if (!j || j.gifts === 0) return
+    j.gifts--
+    if (j.gifts === 0) this.order = this.order.filter((x) => x !== id)
     this.allocate()
   }
 
   allocate() {
-    const running = this.order.slice(0, this.slots).map((id) => this.sims.get(id))
-    const shares = running.reduce((n, s) => n + s.gifts, 0)
-    for (const s of this.sims.values()) {
-      const on = running.includes(s) && this.budget > 0
-      s.explicit = on ? Math.min(MAX_DUTY - s.implicit, this.budget * s.gifts / shares) : 0
+    // Kernel shares per unit of core: the system weights sum to the system duty.
+    const sys = this.jobs.reduce((n, j) => n + j.weight, 0)
+    const k = sys / this.system
+    const running = this.order.slice(0, this.slots).map((id) => this.get(id))
+    const gifts = running.reduce((n, j) => n + j.gifts, 0)
+    for (const j of this.jobs) {
+      const on = running.includes(j) && this.budget > 0
+      const core = on ? this.budget * j.gifts / gifts : 0
+      j.core = { system: j.weight / k, donated: core }
+      j.share = { system: j.weight, donated: core * k }
       // Queued means waiting for a slot; with no budget there's nothing to wait for.
-      s.state = on ? 'running' : this.budget > 0 && this.order.includes(s.id) ? 'queued' : 'implicit'
-      s.worker.postMessage({ type: 'duty', implicit: s.implicit, explicit: s.explicit })
+      j.state = on ? 'donated' : this.budget > 0 && this.order.includes(j.id) ? 'queued' : 'system'
     }
+    this.worker.postMessage({
+      type: 'duty',
+      duty: Math.min(MAX_DUTY, this.system + this.budget),
+      shares: this.jobs.map((j) => j.share.system + j.share.donated),
+      donated: this.jobs.map((j) => j.share.donated),
+    })
     this.changed.forEach((f) => f())
   }
 
@@ -139,10 +168,9 @@ export class Mist {
     try { localStorage.setItem(KEY, JSON.stringify({ budget: this.budget, mine: this.mine.slice(0, 100) })) } catch { /* fine */ }
   }
 
-  /** Everything this visitor's machine spends here, as shares of a core. */
+  /** What this visitor's machine spends here, as shares of a core. */
   accounts() {
-    let implicitSims = 0, explicit = 0
-    for (const s of this.sims.values()) { implicitSims += s.implicit; explicit += s.explicit }
-    return { main: this.implicitMain, implicitSims, explicit, total: this.implicitMain + implicitSims + explicit }
+    const donated = this.jobs.reduce((n, j) => n + j.core.donated, 0)
+    return { main: this.main, system: this.system, donated, total: this.main + this.system + donated }
   }
 }

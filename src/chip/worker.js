@@ -1,98 +1,106 @@
-// Runs one 6502 off the main thread: a program, a window of RAM to watch,
-// and a frame counter. It spends a duty-cycled share of each slice of wall
-// time stepping the chip, in two parts:
+// Runs the vCPU off the main thread: the 6502 under the street, with its
+// kernel time-sharing the bar's jobs (chip/vcpu.js). Each slice of wall
+// time it spends `duty` stepping the chip, raising the kernel's timer
+// interrupt every QUANTUM cycles; the host sets duty (system plus
+// donation) and the kernel's share table.
 //
-//   - implicit: the baseline the world runs for everyone;
-//   - explicit: what visitors give through the Mist (mist/scheduler.js).
-//
-// It reports at ~20 Hz (the watched RAM as the CPU writes it, registers,
-// and, for the chip under the street, each node's average voltage over the
-// window), and each time the program bumps its frame counter it issues a
-// receipt: the frame, the half-cycles it took, how many were given, and
-// hashes of the frame's input and output, so anyone can check the work.
+// It reports at ~20 Hz: each node's average voltage over the slice (so
+// the street's lights fade instead of flickering at the clock rate), and
+// per job its watched RAM and frame counter. Each time a job bumps its
+// frame counter it issues a receipt: the frame, the cycles that job ran,
+// how many of them were donated, and hashes of the frame's input and
+// output, so anyone can check the work.
 import { Chip6502 } from './sim.js'
+import { makeTimer, KERNEL, QUANTUM } from './vcpu.js'
 
 const SLICE_MS = 50
 let init = null
 let chip = null
-let implicit = 0.25
-let explicit = 0
-let accum = null
-let samples = 0
-let view = null // the watched window, as last written
-let input = null // the window when the current frame began
-let cursor = 0
-let given = 0 // all explicit half-cycles, for the ledger
-let frameStart = 0, frameGiven = 0
+let timer = null
+let duty = 0.35
+let shares = [], donated = []
+let accum = null, samples = 0
+let jobs = [] // per job: config and running state
 
 self.onmessage = (e) => {
   const m = e.data
   if (m.type === 'init') {
     init = m
-    implicit = m.implicit ?? implicit
     boot()
     loop()
   } else if (m.type === 'duty') {
-    implicit = m.implicit ?? implicit
-    explicit = m.explicit ?? explicit
+    duty = m.duty
+    shares = m.shares
+    donated = m.donated
+    writeShares()
   } else if (m.type === 'poke') {
-    poked = true
+    const j = jobs.find((x) => x.id === m.job)
     for (const a of m.addrs) chip.memory[a] = m.value
-    const i = m.addrs[0] - init.watch.from
-    if (i >= 0 && i < view.length) view[i % init.watch.size] = m.value
+    if (j) {
+      j.poked = true
+      const i = m.addrs[0] - j.watch.from
+      if (i >= 0) j.view[i % j.watch.size] = m.value
+    }
   }
+}
+
+function writeShares() {
+  if (!chip) return
+  // Every job keeps a share of at least 1, or the kernel would skip it.
+  shares.forEach((s, k) => { chip.memory[KERNEL.share + k] = Math.max(1, Math.min(255, Math.round(s))) })
 }
 
 function boot() {
   chip = new Chip6502(init.data)
   for (const [a, b] of init.program) chip.memory[a] = b
-  const { from, to, size } = init.watch
-  view = new Uint8Array(size)
+  timer = makeTimer(chip, init.quantum ?? QUANTUM)
+  jobs = init.jobs.map((j) => ({
+    ...j,
+    view: new Uint8Array(j.watch.size),
+    cursor: 0, last: -1, poked: false,
+    cycles: 0, given: 0, frameStart: 0, frameGiven: 0,
+    input: new Uint8Array(j.watch.size),
+  }))
   chip.onWrite = (a, d) => {
-    if (a >= from && a < to) { view[(a - from) % size] = d; cursor = (a - from) % size }
-    // INC is read-modify-write: the 6502 writes the old value back before
-    // the new one. Only a change of value ends a frame.
-    // The first write is the program zeroing its counter at boot.
-    if (a === init.frameAddr && d !== lastFrame) {
-      const first = lastFrame === -1
-      lastFrame = d
-      if (first) { frameStart = chip.halfCycles; frameGiven = 0 } else receipt(d)
+    if (a === KERNEL.ack) { timer.ack(); return }
+    for (const j of jobs) {
+      if (a >= j.watch.from && a < j.watch.to) { j.view[(a - j.watch.from) % j.watch.size] = d; j.cursor = (a - j.watch.from) % j.watch.size }
+      // INC writes the old value back before the new one: only a change of
+      // value ends a frame. The first write is the job zeroing its counter.
+      if (a === j.frameAddr && d !== j.last) {
+        const first = j.last === -1
+        j.last = d
+        if (first) { j.frameStart = j.cycles; j.frameGiven = 0 } else receipt(j, d)
+      }
     }
   }
-  lastFrame = -1
+  writeShares()
   chip.reset()
   accum = init.levels ? new Uint16Array(chip.nodeCount) : null
-  input = view.slice()
-  frameStart = chip.halfCycles
-  frameGiven = 0
 }
 
-let poked = false
-let lastFrame = -1
-function receipt(frame) {
-  let inBoard = input, outBoard = view.slice()
-  const pp = init.pingpong
+function receipt(j, frame) {
+  let inBoard = j.input, outBoard = j.view.slice()
+  const pp = j.pingpong
   if (pp) {
-    // Double-buffered: the pointer now names the page just finished; the
-    // other page still holds exactly what the CPU read.
+    // Double-buffered: the pointer names the page just finished; the other
+    // page still holds exactly what the CPU read.
     const done = chip.memory[pp.ptr], other = done === pp.pages[0] ? pp.pages[1] : pp.pages[0]
-    outBoard = chip.memory.slice(done << 8, (done << 8) + init.watch.size)
-    inBoard = chip.memory.slice(other << 8, (other << 8) + init.watch.size)
+    outBoard = chip.memory.slice(done << 8, (done << 8) + j.watch.size)
+    inBoard = chip.memory.slice(other << 8, (other << 8) + j.watch.size)
   }
   self.postMessage({
-    type: 'receipt',
-    frame,
-    halfCycles: chip.halfCycles - frameStart,
-    given: Math.round(frameGiven),
+    type: 'receipt', job: j.id, frame,
+    halfCycles: Math.round(j.cycles - j.frameStart),
+    given: Math.round(j.frameGiven),
     input: hash(inBoard), output: hash(outBoard),
     inputBoard: inBoard, outputBoard: outBoard,
-    poked,
-    t: Date.now(),
+    poked: j.poked, t: Date.now(),
   })
-  input = outBoard
-  frameStart = chip.halfCycles
-  frameGiven = 0
-  poked = false
+  j.input = outBoard
+  j.frameStart = j.cycles
+  j.frameGiven = 0
+  j.poked = false
 }
 
 function loop() {
@@ -109,22 +117,25 @@ function loop() {
 
 function slice() {
   const t0 = performance.now()
-  const duty = Math.min(0.95, implicit + explicit)
-  const budget = SLICE_MS * duty
   const before = chip.halfCycles
-  while (performance.now() - t0 < budget) {
-    const h0 = chip.halfCycles
-    for (let k = 0; k < 8; k++) chip.halfStep()
-    // Attribute as we go, so a frame that ends mid-slice gets its share.
-    frameGiven += (chip.halfCycles - h0) * (duty > 0 ? Math.min(explicit, duty) / duty : 0)
+  const ranBy = jobs.map((j) => j.cycles)
+  while (performance.now() - t0 < SLICE_MS * duty) {
+    // Charge each batch to the job the kernel says is running.
+    const j = jobs[chip.memory[KERNEL.cur]] ?? null
+    for (let k = 0; k < 8; k++) { chip.halfStep(); timer.halfStep() }
+    if (j) {
+      j.cycles += 8
+      const s = shares[jobs.indexOf(j)] || 1
+      const g = 8 * Math.min(1, (donated[jobs.indexOf(j)] || 0) / s)
+      j.given += g
+      j.frameGiven += g
+    }
     if (accum) {
-      const s = chip.state
-      for (let i = 0; i < s.length; i++) accum[i] += s[i]
+      const st = chip.state
+      for (let i = 0; i < st.length; i++) accum[i] += st[i]
       samples++
     }
   }
-  const ran = chip.halfCycles - before
-  given += duty > 0 ? ran * Math.min(explicit, duty) / duty : 0
   const elapsed = performance.now() - t0
   let levels = null
   if (accum) {
@@ -136,14 +147,15 @@ function slice() {
   self.postMessage({
     type: 'tick',
     levels,
-    view: view.slice(),
-    cursor,
-    frame: chip.memory[init.frameAddr],
-    regs: chip.registers(),
-    ran,
+    ran: chip.halfCycles - before,
     wallMs: SLICE_MS,
     busyMs: elapsed,
-    given,
+    cur: chip.memory[KERNEL.cur],
+    regs: chip.registers(),
+    jobs: jobs.map((j, k) => ({
+      id: j.id, view: j.view.slice(), cursor: j.cursor, frame: chip.memory[j.frameAddr],
+      ran: j.cycles - ranBy[k], given: j.given,
+    })),
   }, levels ? [levels.buffer] : [])
   setTimeout(loop, Math.max(0, SLICE_MS - elapsed))
 }

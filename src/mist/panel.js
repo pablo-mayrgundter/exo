@@ -1,27 +1,34 @@
-// The Mist dashboard: your budget, what your machine already spends just
-// being here (implicit), what you're giving to (explicit), what's queued,
-// and the frames you've powered. Plus the $ coins that sit on things in
-// the world.
+// The Mist dashboard: a process table for the vCPU. What your machine
+// already spends being here (system), what you donate on top (donation),
+// each job's memory, the cycles it's getting, and the frames you powered.
+// Plus the chip tokens that sit on jobs in the world.
 import * as THREE from 'three'
-import { FONT_DISPLAY } from '../world/textures.js'
 
-const pct = (x) => `${Math.round(x * 100)}%`
+const pct = (x) => `${(x * 100).toFixed(x < 0.1 ? 1 : 0)}%`
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+const hz = (c) => c >= 1000 ? `${(c / 1000).toFixed(1)}k` : `${Math.round(c)}`
+const bytes = (n) => n >= 1024 ? `${(n / 1024).toFixed(1)} KiB` : `${n} B`
+
+/** A small DIP chip, as inline SVG, for buttons and labels. */
+export const CHIP_ICON = '<svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="4" width="12" height="16" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6 8H3M6 12H3M6 16H3M18 8h3M18 12h3M18 16h3" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="7" r="1.1" fill="currentColor"/></svg>'
 
 /** @param {import('./scheduler.js').Mist} mist @param {HTMLElement} el */
 export function makeMistPanel(mist, el) {
   el.innerHTML = `
-    <div class="mist-head"><span class="label">Mist · gift economy</span><button type="button" class="x" data-close="mist" aria-label="Close">×</button></div>
-    <label class="budget">Your gift budget <span id="mist-budget-v"></span>
-      <input id="mist-budget" type="range" min="0" max="100" step="5">
+    <div class="mist-head"><span class="label">${CHIP_ICON} vCPU · MOS 6502 · time-shared</span><button type="button" class="x" data-close="mist" aria-label="Close">×</button></div>
+    <div id="mist-vcpu" class="value small"></div>
+    <label class="budget">Your donation <span id="mist-budget-v"></span>
+      <input id="mist-budget" type="range" min="0" max="60" step="5">
     </label>
-    <div class="label">Implicit · just being here</div>
-    <div id="mist-implicit" class="rows"></div>
-    <div class="label">Explicit · your gifts</div>
-    <div id="mist-running" class="rows"></div>
+    <table class="jobs" aria-label="Jobs on the vCPU">
+      <thead><tr><th>Job</th><th>Mem</th><th>System</th><th>Donated</th><th>Rate</th><th></th></tr></thead>
+      <tbody id="mist-jobs"></tbody>
+    </table>
+    <div class="label">Host · your machine</div>
+    <div id="mist-host" class="rows"></div>
     <div class="label">Frames you powered</div>
     <div id="mist-receipts" class="rows small"></div>
-    <p class="muted small">Click the <b>$</b> on things in the world to give them cycles. With nobody giving, they drop back to implicit. (The GPU's share isn't measured.)</p>`
+    <p class="muted small">Tap a job's chip token in the world to donate cycles to it. With no donations, a job runs on its system share. (The GPU's share isn't measured.)</p>`
   const budget = el.querySelector('#mist-budget')
   budget.addEventListener('input', () => mist.setBudget(budget.value / 100))
   el.addEventListener('click', (e) => {
@@ -36,22 +43,30 @@ export function makeMistPanel(mist, el) {
     budget.value = Math.round(mist.budget * 100)
     el.querySelector('#mist-budget-v').textContent = `${pct(mist.budget)} of a core`
     const a = mist.accounts()
-    const sims = [...mist.sims.values()]
-    el.querySelector('#mist-implicit').innerHTML = [
+    const totalShares = mist.jobs.reduce((n, j) => n + j.share.system + j.share.donated, 0) || 1
+    el.querySelector('#mist-vcpu').textContent =
+      `${hz(mist.vcpuHz)} cycles/s (1 MHz native) · kernel ${bytes(mist.kernelBytes ?? 0)}`
+    el.querySelector('#mist-jobs').innerHTML = mist.jobs.map((j) => {
+      const sys = j.share.system / totalShares, don = j.share.donated / totalShares
+      const state = j.state === 'queued' ? '<span class="muted">queued</span>' : don ? pct(don) : '—'
+      return `<tr class="${j.state}">
+        <td>${esc(j.name)}<br><span class="small muted">${esc(j.place)}</span></td>
+        <td>${bytes(j.bytes)}</td>
+        <td>${pct(sys)}</td>
+        <td>${state}</td>
+        <td>${hz(j.hz)}/s<br><span class="small muted">${j.receipts.length ? `${hz(j.receipts[0].halfCycles / 2)} / ${esc(j.unit)}` : ''}</span></td>
+        <td class="give"><button type="button" data-take="${j.id}" aria-label="Take back a donation from ${esc(j.name)}"${j.gifts ? '' : ' disabled'}>−</button><button type="button" data-give="${j.id}" aria-label="Donate to ${esc(j.name)}">${CHIP_ICON}</button></td>
+      </tr>`
+    }).join('')
+    el.querySelector('#mist-host').innerHTML = [
       row('Main thread: scripts, draw calls, the connection', `${pct(a.main)} · measured`),
-      ...sims.map((s) => row(`${esc(s.name)} · baseline`, pct(s.implicit))),
+      row('vCPU · system', pct(a.system)),
+      row('vCPU · your donation', `${pct(a.donated)}${mist.order.length > mist.slots ? ' · some queued' : ''}`),
+      row('Total', `${pct(a.total)} of a core`),
     ].join('')
-    el.querySelector('#mist-running').innerHTML = sims.map((s) => {
-      const rate = `${(s.hz / 2000).toFixed(1)} kHz`
-      const status = s.state === 'running' ? `${pct(s.explicit)} · ${rate}` : s.state === 'queued' ? 'queued · no free slot' : `implicit · ${rate}`
-      return `<div class="row ${s.state}">
-        <span>${esc(s.name)} <span class="muted">· ${esc(s.place)}</span><br><span class="small muted">${status}${s.gifts ? ` · ${s.gifts} gift${s.gifts > 1 ? 's' : ''}` : ''}</span></span>
-        <span class="give"><button type="button" data-take="${s.id}" aria-label="Take back a gift from ${esc(s.name)}"${s.gifts ? '' : ' disabled'}>−</button><button type="button" data-give="${s.id}" aria-label="Give to ${esc(s.name)}">$</button></span>
-      </div>`
-    }).join('') + `<div class="row small muted"><span>Slots: ${mist.slots} · total here ${pct(a.total)} of a core</span></div>`
     el.querySelector('#mist-receipts').innerHTML = mist.mine.slice(0, 6).map((r) => row(
-      `${esc(r.name)} · ${r.frame === undefined ? '' : `#${r.frame}`} <span class="muted">${new Date(r.t).toLocaleTimeString()}</span>`,
-      `${Math.round(r.halfCycles / 2000)}k cycles · ${pct(r.share)} yours · ${r.output}${r.verified === true ? ' ✓' : r.verified === false ? ' ✗' : ''}`,
+      `${esc(r.name)} · ${esc(r.frame)} <span class="muted">${new Date(r.t).toLocaleTimeString()}</span>`,
+      `${hz(r.halfCycles / 2)} cycles · ${pct(r.share)} yours · ${esc(r.output)}${r.verified === true ? ' ✓' : r.verified === false ? ' ✗' : ''}`,
     )).join('') || '<div class="row muted">None yet.</div>'
   }
   mist.onChange(render)
@@ -62,35 +77,38 @@ export function makeMistPanel(mist, el) {
 
 function row(a, b) { return `<div class="row"><span>${a}</span><span>${b}</span></div>` }
 
-/** A floating, clickable $ coin. `userData.sim` names what it gives to. */
-export function makeCoin(sim, color = '#f5c842') {
-  const cv = document.createElement('canvas')
-  cv.width = cv.height = 128
-  const g = cv.getContext('2d')
-  const draw = (lit) => {
-    g.clearRect(0, 0, 128, 128)
-    g.shadowColor = color
-    g.shadowBlur = lit ? 24 : 10
-    g.strokeStyle = color
-    g.lineWidth = 6
-    g.beginPath(); g.arc(64, 64, 50, 0, Math.PI * 2); g.stroke()
-    g.fillStyle = lit ? color : 'rgba(5,10,31,0.7)'
-    g.fill()
-    g.fillStyle = lit ? '#050a1f' : color
-    g.font = `64px ${FONT_DISPLAY}`
-    g.textAlign = 'center'
-    g.textBaseline = 'middle'
-    g.fillText('$', 64, 70)
-    tex.needsUpdate = true
+/**
+ * A floating chip token: a little DIP package with glowing pins. Tap it to
+ * donate cycles to its job (`userData.job`); it lights while you are.
+ */
+export function makeChipToken(job, color = '#6beaf2') {
+  const group = new THREE.Group()
+  const c = new THREE.Color(color)
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.1, 0.52), new THREE.MeshBasicMaterial({ color: 0x050a1f, toneMapped: false }))
+  const edge = new THREE.LineSegments(new THREE.EdgesGeometry(body.geometry), new THREE.LineBasicMaterial({ color: c, toneMapped: false }))
+  const pinMat = new THREE.MeshBasicMaterial({ color: c, toneMapped: false })
+  const pins = new THREE.InstancedMesh(new THREE.BoxGeometry(0.08, 0.03, 0.04), pinMat, 8)
+  const m = new THREE.Matrix4()
+  for (let i = 0; i < 8; i++) {
+    const side = i < 4 ? -1 : 1
+    m.makeTranslation(side * 0.22, -0.02, -0.18 + (i % 4) * 0.12)
+    pins.setMatrixAt(i, m)
   }
-  const tex = new THREE.CanvasTexture(cv)
-  tex.colorSpace = THREE.SRGBColorSpace
-  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, toneMapped: false, depthWrite: false }))
-  sp.scale.setScalar(0.7)
-  sp.userData.sim = sim
-  sp.renderOrder = 5
-  draw(false)
+  const dot = new THREE.Mesh(new THREE.CircleGeometry(0.03, 12), pinMat)
+  dot.rotation.x = -Math.PI / 2
+  dot.position.set(0, 0.051, -0.18)
+  group.add(body, edge, pins, dot)
+  group.rotation.x = 0.6 // tilted toward the viewer
+  // A larger, invisible box makes it easy to tap.
+  const hit = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.5, 0.8), new THREE.MeshBasicMaterial({ visible: false }))
+  group.add(hit)
+  group.userData.job = job
   let lit = false
-  sp.userData.setLit = (on) => { if (on !== lit) { lit = on; draw(on) } }
-  return sp
+  group.userData.setLit = (on) => {
+    if (on === lit) return
+    lit = on
+    body.material.color.set(on ? c : 0x050a1f).multiplyScalar(on ? 0.6 : 1)
+    pinMat.color.copy(c).multiplyScalar(on ? 1.6 : 1)
+  }
+  return group
 }

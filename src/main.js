@@ -7,9 +7,10 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { C } from './theme.js'
 import { Frame, reproject, formatRate } from './cosmic/frames.js'
-import { assemble } from './chip/asm.js'
-import { source as lifeSource, BOARD, ZP as LIFE_ZP, verifyLife } from './chip/life.js'
-import { source as showSource, LEDS, ZP as SHOW_ZP } from './chip/lightshow.js'
+import { job as lifeJob, BOARD, ZP as LIFE_ZP, verifyLife } from './chip/life.js'
+import { job as showJob, LEDS, ZP as SHOW_ZP } from './chip/lightshow.js'
+import { job as maxJob, ZP as MAX_ZP } from './chip/max.js'
+import { buildVcpu } from './chip/vcpu.js'
 import { makeChipFloor, CHIP_SCALE } from './world/chipfloor.js'
 import { makeBar } from './world/bar.js'
 import { makeAbode, ABODE_RATE } from './world/abode.js'
@@ -18,8 +19,8 @@ import { neonTexture, FONT_MONO } from './world/textures.js'
 import { Avatar, TIERS } from './avatar/avatar.js'
 import { FaceTracker } from './avatar/face.js'
 import { Ledger, allocation } from './mist/ledger.js'
-import { Mist, Sim } from './mist/scheduler.js'
-import { makeMistPanel, makeCoin } from './mist/panel.js'
+import { Mist, Job } from './mist/scheduler.js'
+import { makeMistPanel, makeChipToken } from './mist/panel.js'
 import { makeArtCar } from './world/artcar.js'
 import { Presence, BroadcastTransport } from './net/presence.js'
 import { Controls } from './controls.js'
@@ -81,51 +82,59 @@ const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.
 if (params.get('fx') !== '0') composer.addPass(bloom)
 composer.addPass(new OutputPass())
 
-// --- The chips, and the Mist that pays for them ---
+// --- The vCPU, its jobs, and the Mist that pays for them ---
+// One 6502, the chip under the street, time-shared by a kernel: Life,
+// the Art Car's light show and Max Pablo's mind are jobs on it.
 const ledger = new Ledger()
 const me = loadSelf()
-const mist = new Mist({ donor: me })
-const chipWorker = (opts) => {
-  const w = new Worker(new URL('./chip/worker.js', import.meta.url), { type: 'module' })
-  w.postMessage({ type: 'init', data, ...opts })
-  w.addEventListener('message', (e) => {
-    if (e.data.type !== 'halt') return
-    console.error('A 6502 halted and was reset:', e.data.message)
-    note('A 6502 crashed and was power-cycled.')
-  })
-  return w
-}
-// Life, on the chip under the street: its voltages light the city.
-const life = mist.add(new Sim({
-  id: 'life', name: 'Life on the 6502', place: 'Exo Cafe', unit: 'generation', implicit: 0.15,
-  worker: chipWorker({
-    program: [...assemble(lifeSource).bytes], levels: true, frameAddr: LIFE_ZP.gen,
-    watch: { from: BOARD.a, to: BOARD.b + 256, size: 256 },
-    pingpong: { ptr: LIFE_ZP.src + 1, pages: [BOARD.a >> 8, BOARD.b >> 8] },
-  }),
-  verify: verifyLife,
-}))
-// The Art Car's light show, on a 6502 of its own.
+const vcpu = buildVcpu([
+  { name: 'life', entry: 'life', job: lifeJob },
+  { name: 'show', entry: 'show', job: showJob },
+  { name: 'max', entry: 'max', job: maxJob },
+])
+const worker = new Worker(new URL('./chip/worker.js', import.meta.url), { type: 'module' })
+worker.addEventListener('message', (e) => {
+  if (e.data.type !== 'halt') return
+  console.error('The vCPU halted and was reset:', e.data.message)
+  note('The vCPU crashed and was power-cycled.')
+})
+worker.postMessage({
+  type: 'init', data, program: vcpu.bytes, levels: true,
+  jobs: [
+    { id: 'life', frameAddr: LIFE_ZP.gen, watch: { from: BOARD.a, to: BOARD.b + 256, size: 256 },
+      pingpong: { ptr: LIFE_ZP.src + 1, pages: [BOARD.a >> 8, BOARD.b >> 8] } },
+    { id: 'show', frameAddr: SHOW_ZP.frame, watch: { from: LEDS.a, to: LEDS.a + LEDS.count, size: LEDS.count } },
+    { id: 'max', frameAddr: MAX_ZP.frame, watch: { from: MAX_ZP.line, to: MAX_ZP.line + 1, size: 1 } },
+  ],
+})
+const mist = new Mist({ donor: me, worker, system: 0.35 })
+// Memory: code, plus what each job reads and writes.
+const life = mist.add(new Job({ id: 'life', name: 'Life', place: 'the bar wall', unit: 'generation', weight: 6,
+  bytes: vcpu.sizes.life + 512 + 11, verify: verifyLife }))
+const show = mist.add(new Job({ id: 'show', name: 'Art Car lights', place: 'the street', weight: 1,
+  bytes: vcpu.sizes.show + LEDS.count + 2 }))
+const mind = mist.add(new Job({ id: 'max', name: 'Max Pablo', place: 'behind the bar', unit: 'thought', weight: 1,
+  bytes: vcpu.sizes.max + 4 }))
+mist.kernelBytes = vcpu.sizes.kernel + 16 + 256
 const car = makeArtCar()
 world.add(car.group)
-const show = mist.add(new Sim({
-  id: 'artcar', name: 'The Art Car', place: 'the street', unit: 'frame', implicit: 0.06,
-  worker: chipWorker({
-    program: [...assemble(showSource).bytes], frameAddr: SHOW_ZP.frame,
-    watch: { from: LEDS.a, to: LEDS.a + LEDS.count, size: LEDS.count },
-  }),
-}))
 let tick = null
 life.onMessage((m) => {
   if (m.type !== 'tick') return
-  chipHz = life.hz
-  tick = { ...m, board: m.view, gen: m.frame, hz: life.hz }
+  chipHz = mist.vcpuHz * 2
+  tick = { board: m.view, cursor: m.cursor, gen: m.frame, regs: m.regs, hz: chipHz }
   floor.setLevels(m.levels)
   ledger.update(mist.given)
 })
 show.onMessage((m) => {
-  if (m.type === 'tick') { car.setLeds(m.view); ledger.update(mist.given) }
+  if (m.type === 'tick') car.setLeds(m.view)
   if (m.type === 'receipt') car.frameDone(m.t)
+})
+// Max speaks when his mind finishes a thought, if you're near enough to hear.
+mind.onMessage((m) => {
+  if (m.type !== 'receipt' || !entered || side !== 0) return
+  if (avatar.group.position.distanceTo(bar.max.group.position) > 9) return
+  maxSays(MAX.thoughts[m.outputBoard[0] % MAX.thoughts.length])
 })
 
 // --- You ---
@@ -194,21 +203,25 @@ function toggleMist(open = $('mist').hidden) {
   $('mist-open').setAttribute('aria-expanded', String(open))
   if (open) mistPanel.render()
 }
-const coins = [makeCoin('life'), makeCoin('artcar', '#e35bde')]
+// Chip tokens: tap one to donate cycles to that job.
+const coins = [makeChipToken('life'), makeChipToken('show', '#e35bde'), makeChipToken('max', '#ff7a5c')]
 coins[0].position.set(2.95, 5.3, -6.75) // beside the Life wall
 bar.group.add(coins[0])
 coins[1].position.set(0, 4.1, 0) // over the car's arch
 car.group.children[0].add(coins[1])
+coins[2].position.set(1.1, 2.6, -5.4) // at Max's shoulder
+bar.group.add(coins[2])
+const coinY = coins.map((c) => c.position.y)
 function give(id) {
   if (mist.budget === 0) {
     mist.setBudget(0.25)
     note('Gift budget set to 25% of a core; change it in Mist $.')
   }
   const state = mist.give(id)
-  const s = mist.sims.get(id)
-  if (state === 'queued') note(`${s.name}: queued, no free slot. Take a gift back from something else in Mist $.`)
-  else note(`Giving ${s.name} ${Math.round(s.explicit * 100)}% of a core (${s.gifts} gift${s.gifts > 1 ? 's' : ''}).`)
-  if (id === 'life') maxSays(pick(MAX.donate))
+  const s = mist.get(id)
+  if (state === 'queued') note(`${s.name}: queued, no free slot. Take a donation back from another job in Mist.`)
+  else note(`Donating ${Math.round(s.core.donated * 100)}% of a core to ${s.name} (${s.gifts} token${s.gifts > 1 ? 's' : ''}).`)
+  if (id === 'max') maxSays(pick(MAX.donate))
   mistPanel.render()
 }
 
@@ -248,7 +261,7 @@ $('chat').addEventListener('submit', (e) => {
   $('say').blur()
   avatar.say(text)
   presence.say(text)
-  if (/\bmax\b|drink|bar|hello|hi\b/i.test(text)) setTimeout(() => maxSays(pick(MAX.idle)), 1200)
+  if (/\bmax\b|drink|bar|hello|hi\b/i.test(text)) setTimeout(() => maxSays(pick(MAX.thoughts)), 1200)
 })
 addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT') return
@@ -270,7 +283,7 @@ function interact() {
   const p = avatar.group.position
   if (p.distanceTo(car.group.position) < 4.5) { board(); return }
   if (gate.near) { openNetMap(); return }
-  if (p.distanceTo(bar.max.group.position) < 7) give('life')
+  if (p.distanceTo(bar.max.group.position) < 7) give('max')
 }
 function board() {
   riding = true
@@ -294,19 +307,23 @@ controls.onClick = (e) => {
   if (side !== 0 || !entered) return
   const ndc = new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1)
   ray.setFromCamera(ndc, camera)
-  const coin = ray.intersectObjects(coins)[0]
-  if (coin) { give(coin.object.userData.sim); return }
-  const hit = ray.intersectObject(bar.life)[0]
-  if (hit?.instanceId == null) return
-  const cell = hit.instanceId
+  const hit = ray.intersectObjects(coins, true)[0]
+  if (hit) {
+    let o = hit.object
+    while (o && !o.userData.job) o = o.parent
+    if (o) { give(o.userData.job); return }
+  }
+  const cellHit = ray.intersectObject(bar.life)[0]
+  if (cellHit?.instanceId == null) return
+  const cell = cellHit.instanceId
   const value = bar.isAlive(cell) ? 0 : 1
   // Both pages, so the poke survives the board swap.
-  life.worker.postMessage({ type: 'poke', addrs: [BOARD.a + cell, BOARD.b + cell], value })
+  worker.postMessage({ type: 'poke', job: 'life', addrs: [BOARD.a + cell, BOARD.b + cell], value })
   note(`Poked $${(BOARD.a + cell).toString(16).toUpperCase()} = ${value}`)
 }
 
 // A handle for tests and the console: ?debug
-if (params.has('debug')) window.exo = { mist, car, life, show, face, give, avatar, controls, bar, floor, abode, portal, camera, renderer, ledger, presence, chipFrame, cafe, get side() { return side }, get tick() { return tick } }
+if (params.has('debug')) window.exo = { mist, vcpu, worker, car, life, show, mind, face, give, avatar, controls, bar, floor, abode, portal, camera, renderer, ledger, presence, chipFrame, cafe, get side() { return side }, get tick() { return tick } }
 
 // --- Loop ---
 const clock = new THREE.Clock()
@@ -334,7 +351,7 @@ setInterval(() => {
   const now = performance.now()
   span = now - lastFrameAt
   lastFrameAt = now
-  mist.implicitMain = span ? Math.min(1, busy / span) : 0
+  mist.main = span ? Math.min(1, busy / span) : 0
   busy = 0
 }, 2000)
 
@@ -415,14 +432,12 @@ function frame() {
   const prompt = riding ? 'E · step off the Art Car' : nearCar ? 'E · ride the Art Car' : gate.near ? 'E · jack into NetMap' : null
   $('prompt').hidden = !entered || !prompt
   if (prompt) $('prompt').textContent = prompt
-  for (const c of coins) c.userData.setLit(mist.sims.get(c.userData.sim).state === 'running')
-  coins[0].position.y = 5.3 + Math.sin(now * 2) * 0.08
-  coins[1].position.y = 4.1 + Math.sin(now * 2 + 1) * 0.08
+  for (const c of coins) c.userData.setLit(mist.get(c.userData.job).state === 'donated')
+  coins.forEach((c, i) => { c.position.y = coinY[i] + Math.sin(now * 2 + i) * 0.08; c.rotation.y = now })
 
   // Max: a hello when you first come near, then the odd remark.
   const nearMax = side === 0 && pos.distanceTo(bar.max.group.position) < 7
   if (entered && nearMax && !greeted) { greeted = true; maxSays(pick(MAX.greet)) }
-  if (entered && nearMax && performance.now() - lastMax > 22000) maxSays(pick(MAX.idle))
 
   for (const [, a] of others) a.update(dt, { time: now })
   if (now - lastPublish > 0.1) {

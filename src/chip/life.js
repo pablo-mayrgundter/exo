@@ -7,10 +7,14 @@
 // Index i = y·16 + x fits a byte, so up and down are i∓16 with 8-bit wrap
 // for free, and left and right keep the row (i & $F0) and wrap the column.
 
+import { standalone } from './vcpu.js'
+
 export const BOARD = { a: 0x0200, b: 0x0300, size: 16 }
 export const ZP = { src: 0x10, dst: 0x12, i: 0x14, l: 0x15, r: 0x16, row: 0x17, sum: 0x18, t: 0x19, gen: 0x1a }
 
-export const source = `
+// As a job for the vCPU's kernel (chip/vcpu.js): code from `life`, no stack
+// setup and no vectors; `source` wraps it to run on a chip of its own.
+export const job = `
 SRC = $10      ; pointer to the current board
 DST = $12      ; pointer to the board being written
 I   = $14      ; the cell being computed
@@ -24,9 +28,7 @@ BOARD_A = $0200
 BOARD_B = $0300
 
         .org $0400
-start:  ldx #$ff
-        txs
-        lda #<BOARD_A
+life:   lda #<BOARD_A
         sta SRC
         sta DST
         lda #>BOARD_A
@@ -146,10 +148,9 @@ seeds:  .byte $01, $12, $20, $21, $22               ; glider at the top left
         .byte $88, $89, $97, $98, $a8               ; R-pentomino in the middle
         .byte $ff
 glider: .byte $01, $12, $20, $21, $22, $ff
-
-        .org $fffc
-        .word start, start
 `
+
+export const source = standalone(job, 'life')
 
 /** One generation of Life on the 16×16 torus, in JS: the cheap check. */
 export function lifeStep(cells) {

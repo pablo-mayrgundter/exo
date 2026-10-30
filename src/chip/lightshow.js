@@ -3,18 +3,19 @@
 // an 8-bit LFSR. About 700 cycles a frame, so the car glows and moves only
 // as fast as someone gives it cycles.
 
-export const LEDS = { a: 0x0200, count: 32 }
-export const ZP = { frame: 0x1a, lfsr: 0x1b }
+import { standalone } from './vcpu.js'
 
-export const source = `
-FRAME = $1a
-LFSR  = $1b
-LEDS  = $0200
+export const LEDS = { a: 0x0700, count: 32 }
+export const ZP = { frame: 0x20, lfsr: 0x21 }
 
-        .org $0400
-start:  ldx #$ff
-        txs
-        lda #1
+// A job for the vCPU's kernel; `source` runs it on a chip of its own.
+export const job = `
+FRAME = $20
+LFSR  = $21
+LEDS  = $0700
+
+        .org $0500
+show:   lda #1
         sta LFSR
         lda #0
         sta FRAME
@@ -38,10 +39,9 @@ keep:   sta LFSR
         sta LEDS,x
         inc FRAME
         jmp frame
-
-        .org $fffc
-        .word start, start
 `
+
+export const source = standalone(job, 'show')
 
 /** The LEDs the program shows after frame `f`'s pass, in JS. */
 export function lightshowFrame(f, lfsrBefore) {
