@@ -1,8 +1,9 @@
 name: Pages
 
 # Builds the site and deploys it to the root of the gh-pages branch, which
-# GitHub Pages serves at exo.cafe (public/CNAME). clean-exclude keeps the PR
-# previews (.github/workflows/pr-preview.yml) alive across main deploys.
+# GitHub Pages serves at https://pablo-mayrgundter.github.io/exo/.
+# clean-exclude keeps the PR previews (.github/workflows/pr-preview.yml)
+# alive across main deploys.
 
 on:
   push:

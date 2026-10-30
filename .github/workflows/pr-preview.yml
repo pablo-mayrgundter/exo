@@ -1,7 +1,7 @@
 name: PR preview
 
 # Tests every PR and deploys a live preview to
-# https://exo.cafe/pr-preview/pr-<N>/ (gh-pages: pr-preview/pr-<N>/),
+# https://pablo-mayrgundter.github.io/exo/pr-preview/pr-<N>/ (gh-pages: pr-preview/pr-<N>/),
 # removed when the PR closes. The build's base is relative, so the same
 # dist works at the root and in a preview directory.
 
@@ -30,8 +30,6 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
-      # The preview lives under the main site; its own CNAME would be noise.
-      - run: rm -f dist/CNAME
       - name: Deploy preview
         uses: rossjrw/pr-preview-action@v1.8.1
         with:

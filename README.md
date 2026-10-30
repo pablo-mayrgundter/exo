@@ -64,8 +64,9 @@ Enter chats; E at the gate jacks into NetMap. `?fx=0` turns off bloom,
 `?enter` skips the intro, and `?debug` exposes `window.exo` for poking at
 the scene from the console.
 
-Pushes to `main` deploy to exo.cafe from the `gh-pages` branch; each pull
-request gets a preview at `https://exo.cafe/pr-preview/pr-<n>/`.
+Pushes to `main` deploy to https://pablo-mayrgundter.github.io/exo/ from the
+`gh-pages` branch; each pull request gets a preview at
+`https://pablo-mayrgundter.github.io/exo/pr-preview/pr-<n>/`.
 
 Open two tabs to see presence: they share a room over `BroadcastChannel`
 until the Synchronizer (Matrix and murmur) replaces it.
