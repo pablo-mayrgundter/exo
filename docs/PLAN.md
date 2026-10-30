@@ -163,13 +163,12 @@ the shape of the net.*
 
 ### E3.2 The Grid: NetMap 🔜 (T7, T4)
 - **S3.2.1** As a visitor, I can jack into NetMap from the street. ✅ (a link, for now)
-- **S3.2.2** As a visitor, I can ride a LightSail along my route across the internet. 🔜
-  - [ ] exo.cafe serves `sail.html`: a three.js NetGL guest (`makeNetGLThreeOverlayGuest`) drawing the LightSail in ECEF metres, as celestiary's `layer.html` draws orbits
-  - [ ] NetMap hosts it like Orbits (`?sail=1`, `sail_src`, allowed origins), and posts the route's arcs to it (`sail:route`, ECEF via `lngLatAltToEcef`)
-  - [ ] The sail rides the arcs by the host's clock; the rider is your avatar
-  - [ ] portal-netgl: a second deck guest must survive the first one detaching (`detach()` restores the `onAfterRender` it found)
-  - [ ] Scale: a 10 m sail is half a pixel at NetMap's closest globe zoom; a declared display scale, or a minimum pixel size
-  - [ ] Traceroute from the visitor (or their AS from the browser's IP, server-side) to exo.cafe's host
+- **S3.2.2** As a visitor, I can ride a LightSail along the internet's links. 🔜 (contracts in [portal#56](https://github.com/pablo-mayrgundter/portal/issues/56), RFC 0004)
+  - [ ] NetMap as a NetGL guest layer in exo: a guest page (`map.html`) whose deck.gl drawing is recorded and replayed into exo's scene, on an agreed frame (ECEF metres; exo's die at 0° N 0° E)
+  - [ ] NetMap publishes its links and routes as path anchors (RFC 0004 §4); exo subscribes
+  - [ ] The LightSail, exo's own Tron asset at µm scale, flies those paths by exo's clock; the rider is your avatar
+  - [ ] portal-netgl: a second deck guest must survive the first one detaching (RFC 0004 §6)
+  - [ ] Traceroute from the visitor (or their AS from the browser's IP, server-side) to exo's host
 - **S3.2.3** As a visitor, I see NetMap through a window in the bar, live. (NetGL guest; NetMap is deck.gl)
 - **S3.2.4** As a group, we pick where our room's server runs, on GeoNetMap, for least latency. (T5)
 
@@ -219,7 +218,7 @@ the shape of the net.*
   - [x] The HUD gives positions on the die in µm and mm, and your height
   - [x] The abode stays at human scale in metres; the portal's link carries the ~224,000× magnification
 - **S5.0.2** As a developer, the die has a place on Earth: 0° N 0° E, sea level (`sceneToEcef`). ✅
-- **S5.0.3** As a developer, Earth-scale guests (NetMap) compose with the µm street without float32 trouble. 🔜 (portal RFC)
+- **S5.0.3** As a developer, Earth-scale guests (NetMap) compose with the µm street without float32 trouble. 🔜 ([portal#56](https://github.com/pablo-mayrgundter/portal/issues/56): declared units, `view.eye`, magnifying portals)
   - [ ] A global scene scale and nested frames, composed in doubles, relative to the eye
 
 ### E5.1 Frames ✅ (T6)
@@ -259,7 +258,7 @@ the shape of the net.*
 
 ## Next up
 
-1. **LightSail on NetMap** (S3.2.2) and **real units** (E5.0).
+1. **NetMap as a guest, and the LightSail** (S3.2.2), once [portal#56](https://github.com/pablo-mayrgundter/portal/issues/56) (RFC 0004) has been reviewed.
 2. **Matrix presence** (E4.1): the first time two people meet at the bar. Coordinate with Bldrs Collab on Matrix vs. WebRTC and on murmur.
 3. **Replicated chip** (E2.2): one chip for the room; donations that help everyone.
 4. **Faster chip** (T2): WASM or bit-parallel; Life in fewer cycles (it's ~73k a generation).
