@@ -86,6 +86,13 @@ real computer, a bartender, and other people.*
   - [ ] Pads as lots; a building format (glTF + a manifest); placement rules
 - **S1.4.2** As a visitor, I can visit other chips' cities. (visual6502's repo also has the 6800 and Z80)
 
+### E1.6 The jukebox ✅ / 🔜 (T1)
+- **S1.6.1** As a visitor, I can play 8-bit music in the bar. ✅
+  - [x] An NES-style APU in Web Audio (two pulses, triangle, noise), a song text format, eight tracks: public-domain classics and originals (`src/audio/CREDITS.md`)
+  - [x] A jukebox cabinet with a spectrum screen; J play, N next, M mute; the music fades with distance
+  - [ ] Tap or click the cabinet to play (touch screens have no J key)
+  - [ ] A 6502 job that drives the APU's registers (`apu.poke($4000…)`), so the music runs on the vCPU too
+
 ### E1.5 Art cars ✅ / 🔜 (T1, T2, T8)
 - **S1.5.1** As a visitor, I can ride an art car that comes to life when someone gives it cycles. ✅
   - [x] The Art Car: a 32-LED arch whose light show is a program on its own nested 6502 (`chip/lightshow.js`, ~700 cycles a frame), checked frame for frame against a JS reference
