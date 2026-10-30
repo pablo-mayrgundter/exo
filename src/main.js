@@ -66,7 +66,7 @@ const bar = makeBar({ names: data.nodenames })
 world.add(bar.group)
 const gate = makeGate()
 world.add(gate.group)
-const abode = makeAbode()
+const abode = makeAbode({ renderer })
 const portal = new PortalPair(
   { scene: world, anchor: bar.portalAnchor },
   { scene: abode.scene, anchor: abode.portalAnchor },

@@ -1,20 +1,29 @@
 // Pablo's abode: another place in cyberspace, reached through the arch in
 // the bar's west wall. A temple pavilion with a glowing tree of life on its
 // gable, a tree of cyan spirals inlaid in the plaza, candles along spiral
-// paths, and a dusk sky. Its clock runs 600 times as fast as the bar's, so
-// the stars wheel round about every two and a half minutes.
+// paths, and a dusk sky: celestiary's stars when its guest can draw them
+// (celestiary-sky.js), else procedural ones. Its clock runs 600 times as
+// fast as the bar's, so the stars wheel round about every two and a half
+// minutes.
 //
 // Abode space: metres, the plaza's centre at the origin, the temple to -z,
 // the arch back to the bar at +z facing the temple.
 import * as THREE from 'three'
 import { C } from '../theme.js'
 import { rng, neonTexture, FONT_MONO } from './textures.js'
+import { makeCelestiarySky, SKY_GLSL } from './celestiary-sky.js'
 
 export const ABODE_RATE = 600
+/**
+ * Where the abode's sky is seen from: the latitude the procedural sky's
+ * pole was tilted for (0.6 rad from the zenith), on the prime meridian.
+ */
+export const ABODE_SITE = { lat: 90 - 0.6 * 180 / Math.PI, lon: 0 }
 
 const basic = (o) => new THREE.MeshBasicMaterial({ toneMapped: false, ...o })
 
-export function makeAbode() {
+/** @param {{renderer?: THREE.WebGLRenderer}} [o] with a renderer, the sky comes from celestiary (celestiary-sky.js) */
+export function makeAbode({ renderer } = {}) {
   const scene = new THREE.Scene()
   scene.name = 'abode'
   scene.background = new THREE.Color(0x0b0a2a)
@@ -22,12 +31,19 @@ export function makeAbode() {
   const colliders = []
   const r = rng(1009)
 
-  // Sky: a dusk gradient dome, and stars on a sphere that turns with the
-  // abode's clock.
+  // Sky: a dusk gradient dome, over celestiary's sky when it comes
+  // (celestiary-sky.js), else over procedural stars on a sphere that turns
+  // with the abode's clock.
+  const celestiary = renderer ? makeCelestiarySky({ renderer, site: ABODE_SITE }) : null
   const sky = new THREE.Mesh(new THREE.SphereGeometry(400, 32, 16), new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false, fog: false,
+    uniforms: celestiary ? celestiary.uniforms : {},
+    defines: celestiary ? { CELESTIARY: 1 } : {},
     vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
     fragmentShader: `varying vec3 vP;
+      #ifdef CELESTIARY
+      ${SKY_GLSL}
+      #endif
       void main(){
         float h = vP.y;
         // Linear colours: dusk orange at the horizon, violet, then night.
@@ -35,9 +51,18 @@ export function makeAbode() {
         vec3 mid = vec3(0.09, 0.03, 0.14);
         vec3 top = vec3(0.004, 0.006, 0.03);
         vec3 c = h < 0.12 ? mix(horizon, mid, smoothstep(-0.02, 0.12, h)) : mix(mid, top, smoothstep(0.12, 0.6, h));
+        #ifdef CELESTIARY
+        if (skyOn > 0.5) {
+          // celestiary's sky over the dusk, thinning into the horizon's haze.
+          vec4 s = skySample(normalize(vP)) * smoothstep(-0.02, 0.15, h);
+          c = c * (1.0 - s.a) + s.rgb;
+        }
+        #endif
         gl_FragColor = vec4(c, 1.0);
       }`,
   }))
+  // The guest starts when the abode is first drawn, from either side.
+  if (celestiary) sky.onBeforeRender = () => celestiary.seen()
   scene.add(sky)
   const starPos = []
   for (let i = 0; i < 2500; i++) {
@@ -49,7 +74,7 @@ export function makeAbode() {
   const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 1.6, sizeAttenuation: false, fog: false, transparent: true, opacity: 0.85 }))
   // The celestial pole, tilted like a mid-northern latitude's.
   const pole = new THREE.Group()
-  pole.rotation.x = -0.6
+  pole.rotation.x = -(90 - ABODE_SITE.lat) * Math.PI / 180
   pole.add(stars)
   scene.add(pole)
 
@@ -205,11 +230,17 @@ export function makeAbode() {
 
   return {
     scene, colliders, portalAnchor,
+    /** celestiary's sky (null without a renderer): its `stats`, `on`. */
+    sky: celestiary,
     spawn: new THREE.Vector3(0, 0, 13),
     /** @param {number} abodeTime seconds on the abode's clock */
     update(abodeTime, wallTime) {
       // One sidereal day is 86164 s; at ×600 that's ~144 s of wall time.
       pole.rotation.y = (abodeTime / 86164) * Math.PI * 2
+      if (celestiary) {
+        celestiary.update(abodeTime)
+        pole.visible = !celestiary.on
+      }
       candleMat.uniforms.t.value = wallTime
     },
   }

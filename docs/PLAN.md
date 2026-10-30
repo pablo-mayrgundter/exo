@@ -168,6 +168,9 @@ the shape of the net.*
 
 ### E3.3 The sky: Celestiary 💭 (T9, T4, T6)
 - **S3.3.1** As a visitor in the abode, I see the real sky for my place and time, through Celestiary.
+  - [x] Host side (`src/world/celestiary-sky.js`): celestiary's `layer.html` in a cross-origin iframe draws six cube faces in the equator of date at the abode's ×600 time into an atlas, and the dome samples it under the dusk glow and turns it by sidereal time. A guest whose `layer:hello` lacks kind `sky` is let go, with the procedural sky kept
+  - [ ] celestiary: a sky mode for `layer.html` (`?sky=1`: stars, planets, Sun and Moon; hello `kinds: ['sky'], frames: ['equator-of-date']`). Today's layer draws orbits only, so production stays procedural
+  - [ ] portal-netgl: `frame: 'equator-of-date'` and `observer` in `NetGLLayerView` (its type only names `'ecef'`)
 - **S3.3.2** As a visitor, I can step out of the bar into the solar system (a door, like portal's Celestiary demo).
 
 ## I4 · Presence: together in the same place
