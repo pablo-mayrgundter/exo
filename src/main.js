@@ -21,6 +21,7 @@ import { Ledger, allocation } from './mist/ledger.js'
 import { Mist, Sim } from './mist/scheduler.js'
 import { makeMistPanel, makeCoin } from './mist/panel.js'
 import { makeArtCar } from './world/artcar.js'
+import { makeJukebox } from './world/jukebox.js'
 import { Presence, BroadcastTransport } from './net/presence.js'
 import { Controls } from './controls.js'
 import { MANIFESTO, MIST, MAX } from './content.js'
@@ -63,6 +64,9 @@ const floor = makeChipFloor(data, chipFrame)
 world.add(floor.group)
 const bar = makeBar({ names: data.nodenames })
 world.add(bar.group)
+const jukebox = makeJukebox({ position: [-7.9, -6.2], rotation: 0.35, note }) // the north-west corner, by the back bar
+bar.group.add(jukebox.group)
+bar.colliders.push(jukebox.collider)
 const gate = makeGate()
 world.add(gate.group)
 const abode = makeAbode()
@@ -254,6 +258,7 @@ addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT') return
   if (e.key === 'Enter' && entered) { e.preventDefault(); $('say').focus() }
   if (e.code === 'KeyE') interact()
+  jukebox.key(e) // J play/pause, N next, M mute
   if (e.key === 'Escape') { $('menu').hidden = true }
 })
 
@@ -307,6 +312,7 @@ controls.onClick = (e) => {
 
 // A handle for tests and the console: ?debug
 if (params.has('debug')) window.exo = { mist, car, life, show, face, give, avatar, controls, bar, floor, abode, portal, camera, renderer, ledger, presence, chipFrame, cafe, get side() { return side }, get tick() { return tick } }
+if (window.exo) window.exo.jukebox = jukebox
 
 // --- Loop ---
 const clock = new THREE.Clock()
@@ -409,6 +415,7 @@ function frame() {
   bar.exterior.visible = !inside
   floor.update(dt)
   bar.update(dt, floor, tick, now)
+  jukebox.update(dt, side === 0 ? pos : null)
   abode.update(abodeFrame.time, now)
   gate.update(now, side === 0 ? pos : null)
   const nearCar = side === 0 && pos.distanceTo(car.group.position) < 4.5
