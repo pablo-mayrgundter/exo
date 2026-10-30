@@ -1,0 +1,28 @@
+{
+  "name": "exo-cafe",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Exo Cafe: a participatory art demo on Cloud City. A Tron bar in a corner of a running 6502.",
+  "type": "module",
+  "scripts": {
+    "predev": "node scripts/copy-mediapipe.mjs",
+    "dev": "vite",
+    "prebuild": "node scripts/copy-mediapipe.mjs",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "import-chip": "node scripts/import-visual6502.mjs"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@mediapipe/tasks-vision": "^1.2.0",
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

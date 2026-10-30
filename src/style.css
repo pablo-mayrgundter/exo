@@ -1,0 +1,118 @@
+:root {
+  --void: #050A1F;
+  --panel: #0A1438;
+  --line: #1F5C8C;
+  --text: #E8F6FF;
+  --soft: #CFE2FF;
+  --muted: #8FA6D6;
+  --cyan: #6BEAF2;
+  --orange: #FF5A3C;
+  --orange-soft: #FF9A80;
+  --yellow: #F5C842;
+  --magenta: #E35BDE;
+  --green: #84F55C;
+  --mono: 'Share Tech Mono', ui-monospace, monospace;
+  --display: 'Michroma', 'Eurostile', 'Arial Black', sans-serif;
+  --body: 'Chakra Petch', 'Segoe UI', system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--void); color: var(--text); font-family: var(--body); overflow: hidden; }
+a { color: var(--cyan); }
+a:hover { color: #fff; }
+#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+
+.bar.top {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 2;
+  display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 4px 24px;
+  padding: 4px 16px; background: rgba(10, 20, 56, 0.86); border-bottom: 1px solid var(--line);
+  font-family: var(--mono); font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase;
+}
+.brand { display: flex; gap: 12px; color: var(--muted); }
+.brand .hi { color: var(--text); }
+.links { display: flex; flex-wrap: wrap; gap: 2px 4px; }
+.links a, .links button {
+  display: inline-flex; align-items: center; min-height: 36px; padding: 0 10px;
+  color: var(--cyan); text-decoration: none; background: none; border: 0; font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer;
+}
+.links a:hover, .links button:hover { color: #fff; }
+
+.panel {
+  position: fixed; z-index: 2; width: min(320px, calc(100vw - 32px));
+  padding: 10px 14px 12px; background: rgba(10, 20, 56, 0.82); border: 1px solid var(--line);
+  font-family: var(--mono); font-size: 13px;
+}
+.panel.where { left: 16px; bottom: 16px; }
+.panel.you { right: 16px; bottom: 16px; border-color: var(--orange); box-shadow: 0 0 24px rgba(255, 90, 60, 0.18); }
+.label { color: var(--muted); letter-spacing: 0.16em; text-transform: uppercase; font-size: 11px; margin-top: 6px; }
+.label:first-child { margin-top: 0; }
+.value { color: var(--text); font-size: 15px; letter-spacing: 0.04em; }
+.value.small { font-size: 12.5px; color: var(--soft); white-space: pre-line; }
+.muted { color: var(--muted) !important; }
+.meter { height: 6px; margin: 8px 0 4px; background: #101a44; border: 1px solid var(--line); }
+.meter > div { height: 100%; width: 0%; background: linear-gradient(90deg, var(--cyan), var(--magenta)); transition: width 0.3s; }
+.buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+button { font-family: var(--mono); }
+.buttons button {
+  min-height: 36px; padding: 0 12px; background: transparent; color: var(--orange-soft);
+  border: 1px solid var(--orange); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; cursor: pointer;
+}
+.buttons button[aria-pressed="true"] { background: var(--orange); color: var(--void); }
+.buttons button:disabled { opacity: 0.5; cursor: wait; }
+
+.chat { position: fixed; z-index: 2; left: 50%; bottom: 16px; transform: translateX(-50%); width: min(420px, calc(100vw - 32px)); }
+.chat input {
+  width: 100%; min-height: 40px; padding: 0 12px; background: rgba(5, 10, 31, 0.85); color: var(--text);
+  border: 1px solid var(--line); font-family: var(--mono); font-size: 14px;
+}
+.chat input:focus { outline: none; border-color: var(--cyan); }
+.prompt {
+  position: fixed; z-index: 2; left: 50%; top: 58%; transform: translateX(-50%);
+  padding: 8px 16px; background: rgba(5, 10, 31, 0.85); border: 1px solid var(--green); color: var(--green);
+  font-family: var(--mono); letter-spacing: 0.14em; text-transform: uppercase; font-size: 14px;
+}
+.hint {
+  position: fixed; z-index: 1; left: 50%; top: 52px; transform: translateX(-50%); max-width: calc(100vw - 32px);
+  color: var(--muted); font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-align: center;
+  transition: opacity 1s;
+}
+.selfie {
+  position: fixed; z-index: 2; right: 16px; top: 56px; width: 160px; border: 1px solid var(--cyan);
+  transform: scaleX(-1); opacity: 0.9;
+}
+
+.overlay {
+  position: fixed; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center; padding: 16px;
+  background: radial-gradient(ellipse at 50% 120%, rgba(240, 122, 62, 0.25), transparent 60%), rgba(5, 10, 31, 0.72);
+}
+.overlay[hidden] { display: none; }
+.card {
+  width: min(560px, 100%); max-height: calc(100vh - 32px); overflow: auto;
+  padding: clamp(20px, 4vw, 40px); background: var(--panel); border: 1px solid var(--orange);
+  box-shadow: 0 0 0 1px var(--void), 0 0 48px rgba(255, 90, 60, 0.28);
+}
+.card.wide { width: min(860px, 100%); }
+.kicker { font-family: var(--mono); font-size: 13px; letter-spacing: 0.18em; text-transform: uppercase; color: #FF7A5C; }
+.card h1 { margin: 12px 0 8px; font-family: var(--display); font-weight: 400; font-size: clamp(34px, 7vw, 56px); letter-spacing: 0.04em; text-transform: uppercase; }
+.card h2 { margin: 24px 0 8px; font-family: var(--display); font-weight: 400; font-size: 20px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--cyan); }
+.card p { color: var(--soft); font-size: 17px; line-height: 1.5; }
+.card pre { white-space: pre-wrap; font-family: var(--mono); font-size: 13px; color: var(--soft); line-height: 1.45; }
+.card ul { color: var(--soft); line-height: 1.5; }
+.card label { display: flex; flex-direction: column; gap: 6px; margin: 16px 0; font-family: var(--mono); font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.card input { min-height: 44px; padding: 0 12px; background: var(--void); color: var(--text); border: 1px solid var(--line); font-family: var(--mono); font-size: 16px; }
+.primary {
+  min-height: 48px; padding: 0 24px; background: var(--orange); color: var(--void); border: 0; cursor: pointer;
+  font-size: 15px; letter-spacing: 0.14em; text-transform: uppercase;
+}
+.primary:hover { background: #FF7A5C; }
+
+@media (max-width: 1180px) {
+  .chat { bottom: auto; top: 52px; }
+  .hint { top: 100px; }
+}
+@media (max-width: 720px) {
+  .panel.where { display: none; }
+  .hint { display: none; }
+  .chat { bottom: auto; top: 86px; }
+  .selfie { width: 96px; top: 136px; }
+}
