@@ -86,19 +86,42 @@ real computer, a bartender, and other people.*
   - [ ] Pads as lots; a building format (glTF + a manifest); placement rules
 - **S1.4.2** As a visitor, I can visit other chips' cities. (visual6502's repo also has the 6800 and Z80)
 
+### E1.5 Art cars ✅ / 🔜 (T1, T2, T8)
+- **S1.5.1** As a visitor, I can ride an art car that comes to life when someone gives it cycles. ✅
+  - [x] The Art Car: a 32-LED arch whose light show is a program on its own nested 6502 (`chip/lightshow.js`, ~700 cycles a frame), checked frame for frame against a JS reference
+  - [x] It drives a loop at a speed set by its chip's frames per second: a crawl on the implicit baseline, rolling when given to
+  - [x] E to board and to step off
+- **S1.5.2** As a builder, I can bring my own art car: a body (glTF), a 6502 program, and what its RAM drives. 💭
+- **S1.5.3** As riders, we steer it along streets (chip traces) rather than a fixed loop. 💭
+
 ## I2 · Mist: give resources, get rez
 
 *Material is limited by memory and motion by compute, and both come from
 participants, not a landlord.*
 
-### E2.1 Rez tiers ✅ (T3, T8)
+### E2.0 The gift economy ✅ / 🔜 (T8, T2)
+*Being here already costs something; giving is on top of that, by choice,
+to the things you want to see alive.*
+- **S2.0.1** As a visitor, I can see what my machine spends here. ✅
+  - [x] Mist dashboard: implicit (main thread, measured; each simulation's baseline) and explicit (my gifts), as shares of a core
+  - [ ] Measure the GPU's share too (EXT_disjoint_timer_query where there is one)
+- **S2.0.2** As a visitor, I set a gift budget and give it to things by clicking their $. ✅
+  - [x] Budget as a share of one core; split among the things given to, in proportion to gifts
+  - [x] Slots (cores to spare, up to 4); gifts beyond them queue
+  - [x] Nobody giving: a thing drops back to its implicit rate
+- **S2.0.3** As a giver, my frames carry my name, and anyone can check the work. ✅
+  - [x] A receipt per frame: cycles, the share given, and hashes of the frame's input and output
+  - [x] Life's receipts verify in JS (one generation: ~73k cycles on the nested 6502, microseconds in JS)
+  - [x] The Life wall's caption names who powered the generation (a quarter or more of its cycles)
+  - [ ] Receipts signed with the giver's key and posted to the room, so others see the names too (with E2.2, E2.3)
+
 - **S2.1.1** As a guest, I spawn into an allocated voxel region and rez in, minecrafty. ✅
   - [x] Allocation shown as a box; voxels fill in bottom up
   - [x] One body definition (capsules and spheres) sampled at 0.16, 0.08, 0.04 m, or smooth
-- **S2.1.2** As a visitor, I can donate compute and watch myself sharpen. ✅
-  - [x] *Donate compute* raises the chip worker's duty cycle from 50% to 95%; the extra cycles are credit
-  - [x] Credit persists in the browser; four tiers, GUEST → RESIDENT → BUILDER → MIST
-  - [ ] 🔜 Say what the donation costs (CPU %, battery) and offer a cap
+- **S2.1.2** As a visitor, I can give compute and watch myself sharpen. ✅
+  - [x] Every cycle given through the Mist is credit; four tiers, GUEST → RESIDENT → BUILDER → MIST
+  - [x] Credit persists in the browser
+  - [ ] Battery: lower the budget on battery power, where the Battery API says so
 
 ### E2.2 Shared compute 🔜 (T2, T5, T8)
 *Today every visitor runs their own copy of the chip; the credit is honest
@@ -133,9 +156,13 @@ the shape of the net.*
 
 ### E3.2 The Grid: NetMap 🔜 (T7, T4)
 - **S3.2.1** As a visitor, I can jack into NetMap from the street. ✅ (a link, for now)
-- **S3.2.2** As a visitor, I can ride my own route across the internet like a light cycle.
+- **S3.2.2** As a visitor, I can ride a LightSail along my route across the internet. 🔜
+  - [ ] exo.cafe serves `sail.html`: a three.js NetGL guest (`makeNetGLThreeOverlayGuest`) drawing the LightSail in ECEF metres, as celestiary's `layer.html` draws orbits
+  - [ ] NetMap hosts it like Orbits (`?sail=1`, `sail_src`, allowed origins), and posts the route's arcs to it (`sail:route`, ECEF via `lngLatAltToEcef`)
+  - [ ] The sail rides the arcs by the host's clock; the rider is your avatar
+  - [ ] portal-netgl: a second deck guest must survive the first one detaching (`detach()` restores the `onAfterRender` it found)
+  - [ ] Scale: a 10 m sail is half a pixel at NetMap's closest globe zoom; a declared display scale, or a minimum pixel size
   - [ ] Traceroute from the visitor (or their AS from the browser's IP, server-side) to exo.cafe's host
-  - [ ] Fly that route on NetMap's globe in first person; arrive at the bar's door
 - **S3.2.3** As a visitor, I see NetMap through a window in the bar, live. (NetGL guest; NetMap is deck.gl)
 - **S3.2.4** As a group, we pick where our room's server runs, on GeoNetMap, for least latency. (T5)
 
@@ -153,9 +180,11 @@ the shape of the net.*
 - **S4.1.2** As a visitor, I see people from anywhere. 🔜
   - [ ] Matrix transport: a room per Cloud City place; state as ephemeral events, chat as messages
   - [ ] Interest management: only people near you, at a rate that falls with distance
-- **S4.1.3** As a visitor, my face mocap reaches others. 🔜
+- **S4.1.3** As a visitor, my mocap reaches others. 🔜
+  - [x] Arms: MediaPipe Pose aims each arm shoulder to wrist; raise your hands and the avatar does; arm directions go out with presence
   - [ ] Send head pose and ~50 blendshape weights, not landmarks (a few hundred bytes a frame)
   - [ ] Draw the visor from blendshapes, so the face survives the network
+  - [ ] Elbows: split the arm in two and use the elbow landmark
 
 ### E4.2 Voice 🔜 (T5)
 - **S4.2.1** As a visitor, I can talk to people near me, spatially.
@@ -170,6 +199,14 @@ the shape of the net.*
 ## I5 · Cosmography: knowing where (and when) we are
 
 *cosmic.js: a library for cosmography, to know where we are in the cosmos.*
+
+### E5.0 Real units 🔜 (T6, T7, T4)
+*Everything in metres (portal RFC 0001 §6.1), with each place's scale
+declared, so a portal between places lines up.*
+- **S5.0.1** As a visitor, the HUD tells me true sizes: the die is ~3.9 × 4.3 mm, a layout unit ~0.45 µm, the streets ~10 µm wide, and at 0.1 m per unit I'm ~8 µm tall, about the 6502's feature size.
+  - [ ] The chip frame in real metres (0.45 µm per unit), and a magnification frame for the visitor (~224,000×)
+  - [ ] A geo anchor for the die (ECEF metres), so zooming out of the chip can carry on to the room, the city, NetMap's globe
+- **S5.0.2** As a developer, frames declare `scale` and nest rigidly, matching RFC 0001 §9.
 
 ### E5.1 Frames ✅ (T6)
 - **S5.1.1** As a developer, I can place a scene in a frame with its own scale, orientation and clock, and map points and durations between frames. ✅
@@ -208,7 +245,7 @@ the shape of the net.*
 
 ## Next up
 
-1. **Go live**: Pages with exo.cafe as the custom domain (T10).
+1. **LightSail on NetMap** (S3.2.2) and **real units** (E5.0).
 2. **Matrix presence** (E4.1): the first time two people meet at the bar. Coordinate with Bldrs Collab on Matrix vs. WebRTC and on murmur.
 3. **Replicated chip** (E2.2): one chip for the room; donations that help everyone.
 4. **Faster chip** (T2): WASM or bit-parallel; Life in fewer cycles (it's ~73k a generation).

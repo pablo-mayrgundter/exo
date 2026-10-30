@@ -26,6 +26,12 @@ would otherwise rediscover.
   counted per walk must survive 2^32: generation marks in `Uint32Array`s
   once wrapped after about an hour and the walk recursed forever (`test/sim.test.js`,
   "wrap"). Test long-run behaviour by starting counters near their limit.
+- **6502 read-modify-write.** `INC`/`DEC`/shifts on memory write the old
+  value back before the new one. Anything triggered by writes (frame
+  counters, receipts) must act on a change of value, not on every write.
+- **Rates from the worker's clock.** Under SwiftShader the main thread lags
+  and worker messages arrive in bursts; time things (frames per second)
+  with timestamps from the worker, not on arrival.
 - **Browser checks: headless Chromium on SwiftShader.** Launch Playwright
   with `--use-angle=swiftshader --enable-unsafe-swiftshader`; don't run
   `playwright install` in cloud sessions. Use `?enter&debug` and drive
@@ -34,8 +40,12 @@ would otherwise rediscover.
 - **Face tracking in tests:** Chromium's `--use-fake-device-for-media-stream
   --use-fake-ui-for-media-stream --use-file-for-fake-video-capture=face.y4m`
   with a still of a face (ffmpeg: `-loop 1 -i face.png -t 3 -pix_fmt yuv420p face.y4m`).
-  The model comes from storage.googleapis.com, so pass the session proxy to
-  Chromium (`proxy: { server: $HTTPS_PROXY }`).
+  The models come from storage.googleapis.com, so pass the session proxy to
+  Chromium as `proxy: { server: process.env.HTTPS_PROXY }`; its port changes
+  between sessions, so don't hard-code it. To test arm aiming without a
+  camera, set `exo.face` to `{running: true, poll() {}, arms: {L: [0, 1, 0], …}}`.
+- Don't `pkill -f "vite preview"` from a command that itself contains that
+  text: it kills its own shell. Run the preview server as a background task.
 - **Colours in shaders are linear.** Hex colours through `THREE.Color` are
   converted for you; literals in GLSL are not, and sRGB-looking values come
   out washed out after the OutputPass.

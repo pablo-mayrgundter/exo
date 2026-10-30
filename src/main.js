@@ -8,7 +8,8 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { C } from './theme.js'
 import { Frame, reproject, formatRate } from './cosmic/frames.js'
 import { assemble } from './chip/asm.js'
-import { source as lifeSource } from './chip/life.js'
+import { source as lifeSource, BOARD, ZP as LIFE_ZP, verifyLife } from './chip/life.js'
+import { source as showSource, LEDS, ZP as SHOW_ZP } from './chip/lightshow.js'
 import { makeChipFloor, CHIP_SCALE } from './world/chipfloor.js'
 import { makeBar } from './world/bar.js'
 import { makeAbode, ABODE_RATE } from './world/abode.js'
@@ -17,6 +18,9 @@ import { neonTexture, FONT_MONO } from './world/textures.js'
 import { Avatar, TIERS } from './avatar/avatar.js'
 import { FaceTracker } from './avatar/face.js'
 import { Ledger, allocation } from './mist/ledger.js'
+import { Mist, Sim } from './mist/scheduler.js'
+import { makeMistPanel, makeCoin } from './mist/panel.js'
+import { makeArtCar } from './world/artcar.js'
 import { Presence, BroadcastTransport } from './net/presence.js'
 import { Controls } from './controls.js'
 import { MANIFESTO, MIST, MAX } from './content.js'
@@ -77,32 +81,54 @@ const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.
 if (params.get('fx') !== '0') composer.addPass(bloom)
 composer.addPass(new OutputPass())
 
-// --- The chip, and the Mist ledger it pays into ---
+// --- The chips, and the Mist that pays for them ---
 const ledger = new Ledger()
-const program = [...assemble(lifeSource).bytes]
-const worker = new Worker(new URL('./chip/worker.js', import.meta.url), { type: 'module' })
-let tick = null
-worker.onmessage = (e) => {
-  if (e.data.type === 'halt') {
-    console.error('The 6502 halted and was reset:', e.data.message)
-    note('The 6502 crashed and was power-cycled.')
-    return
-  }
-  if (e.data.type !== 'tick') return
-  tick = e.data
-  // Smooth the measured rate a little; the slices jitter.
-  const hz = tick.ran / (tick.wallMs / 1000)
-  chipHz = chipHz ? chipHz * 0.8 + hz * 0.2 : hz
-  tick.hz = chipHz
-  floor.setLevels(tick.levels)
-  ledger.update(tick.donated)
+const me = loadSelf()
+const mist = new Mist({ donor: me })
+const chipWorker = (opts) => {
+  const w = new Worker(new URL('./chip/worker.js', import.meta.url), { type: 'module' })
+  w.postMessage({ type: 'init', data, ...opts })
+  w.addEventListener('message', (e) => {
+    if (e.data.type !== 'halt') return
+    console.error('A 6502 halted and was reset:', e.data.message)
+    note('A 6502 crashed and was power-cycled.')
+  })
+  return w
 }
-worker.postMessage({ type: 'init', data, program })
-const GUEST_DUTY = 0.5, DONOR_DUTY = 0.95
-worker.postMessage({ type: 'duty', value: GUEST_DUTY })
+// Life, on the chip under the street: its voltages light the city.
+const life = mist.add(new Sim({
+  id: 'life', name: 'Life on the 6502', place: 'Exo Cafe', unit: 'generation', implicit: 0.15,
+  worker: chipWorker({
+    program: [...assemble(lifeSource).bytes], levels: true, frameAddr: LIFE_ZP.gen,
+    watch: { from: BOARD.a, to: BOARD.b + 256, size: 256 },
+    pingpong: { ptr: LIFE_ZP.src + 1, pages: [BOARD.a >> 8, BOARD.b >> 8] },
+  }),
+  verify: verifyLife,
+}))
+// The Art Car's light show, on a 6502 of its own.
+const car = makeArtCar()
+world.add(car.group)
+const show = mist.add(new Sim({
+  id: 'artcar', name: 'The Art Car', place: 'the street', unit: 'frame', implicit: 0.06,
+  worker: chipWorker({
+    program: [...assemble(showSource).bytes], frameAddr: SHOW_ZP.frame,
+    watch: { from: LEDS.a, to: LEDS.a + LEDS.count, size: LEDS.count },
+  }),
+}))
+let tick = null
+life.onMessage((m) => {
+  if (m.type !== 'tick') return
+  chipHz = life.hz
+  tick = { ...m, board: m.view, gen: m.frame, hz: life.hz }
+  floor.setLevels(m.levels)
+  ledger.update(mist.given)
+})
+show.onMessage((m) => {
+  if (m.type === 'tick') { car.setLeds(m.view); ledger.update(mist.given) }
+  if (m.type === 'receipt') car.frameDone(m.t)
+})
 
 // --- You ---
-const me = loadSelf()
 const avatar = new Avatar({ hue: me.hue, name: me.name, tier: ledger.tier })
 avatar.group.position.set(0, 0.08, 1)
 avatar.group.rotation.y = Math.PI
@@ -112,7 +138,7 @@ const controls = new Controls(canvas)
 controls.yaw = 0
 const face = new FaceTracker()
 let entered = false
-let donating = false
+let riding = false
 
 // --- Others ---
 const presence = new Presence(new BroadcastTransport(), { id: me.id })
@@ -159,15 +185,32 @@ function enter() {
   setTimeout(() => { $('hint').style.opacity = '0' }, 12000)
 }
 
-$('donate').addEventListener('click', () => {
-  donating = !donating
-  $('donate').setAttribute('aria-pressed', String(donating))
-  worker.postMessage({ type: 'duty', value: donating ? DONOR_DUTY : GUEST_DUTY })
-  note(donating
-    ? 'Your CPU now runs the 6502 at 95% duty, up from 50%. Credit accrues toward rez.'
-    : 'Back to the guest share of 50%.')
-  if (donating) maxSays(pick(MAX.donate))
-})
+// The Mist: a dashboard, and $ coins on the things you can give to.
+const mistPanel = makeMistPanel(mist, $('mist'))
+$('mist-open').addEventListener('click', () => toggleMist())
+$('mist').addEventListener('click', (e) => { if (e.target.closest('[data-close]')) toggleMist(false) })
+function toggleMist(open = $('mist').hidden) {
+  $('mist').hidden = !open
+  $('mist-open').setAttribute('aria-expanded', String(open))
+  if (open) mistPanel.render()
+}
+const coins = [makeCoin('life'), makeCoin('artcar', '#e35bde')]
+coins[0].position.set(2.95, 5.3, -6.75) // beside the Life wall
+bar.group.add(coins[0])
+coins[1].position.set(0, 4.1, 0) // over the car's arch
+car.group.children[0].add(coins[1])
+function give(id) {
+  if (mist.budget === 0) {
+    mist.setBudget(0.25)
+    note('Gift budget set to 25% of a core; change it in Mist $.')
+  }
+  const state = mist.give(id)
+  const s = mist.sims.get(id)
+  if (state === 'queued') note(`${s.name}: queued, no free slot. Take a gift back from something else in Mist $.`)
+  else note(`Giving ${s.name} ${Math.round(s.explicit * 100)}% of a core (${s.gifts} gift${s.gifts > 1 ? 's' : ''}).`)
+  if (id === 'life') maxSays(pick(MAX.donate))
+  mistPanel.render()
+}
 
 $('mirror').addEventListener('click', async () => {
   const btn = $('mirror')
@@ -210,7 +253,7 @@ $('chat').addEventListener('submit', (e) => {
 addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT') return
   if (e.key === 'Enter' && entered) { e.preventDefault(); $('say').focus() }
-  if (e.code === 'KeyE' && gate.near) openNetMap()
+  if (e.code === 'KeyE') interact()
   if (e.key === 'Escape') { $('menu').hidden = true }
 })
 
@@ -218,6 +261,27 @@ function note(text) { $('note').textContent = text }
 function pick(a) { return a[Math.floor(Math.random() * a.length)] }
 let lastMax = 0
 function maxSays(text) { bar.max.say(text, 8); lastMax = performance.now() }
+
+/** E: the nearest thing that does something. */
+function interact() {
+  if (!entered) return
+  if (riding) { alight(); return }
+  if (side !== 0) return
+  const p = avatar.group.position
+  if (p.distanceTo(car.group.position) < 4.5) { board(); return }
+  if (gate.near) { openNetMap(); return }
+  if (p.distanceTo(bar.max.group.position) < 7) give('life')
+}
+function board() {
+  riding = true
+  note('Aboard the Art Car. It drives as fast as its 6502 runs: give it cycles ($) to speed up. E to get off.')
+}
+function alight() {
+  riding = false
+  const p = avatar.group.position
+  p.add(new THREE.Vector3(2.4, 0, 0).applyQuaternion(car.group.quaternion))
+  p.y = 0.08
+}
 
 function openNetMap() {
   note('Jacking into NetMap in a new tab…')
@@ -230,16 +294,19 @@ controls.onClick = (e) => {
   if (side !== 0 || !entered) return
   const ndc = new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1)
   ray.setFromCamera(ndc, camera)
+  const coin = ray.intersectObjects(coins)[0]
+  if (coin) { give(coin.object.userData.sim); return }
   const hit = ray.intersectObject(bar.life)[0]
   if (hit?.instanceId == null) return
   const cell = hit.instanceId
   const value = bar.isAlive(cell) ? 0 : 1
-  worker.postMessage({ type: 'poke', cell, value })
-  note(`Poked $${(0x200 + cell).toString(16).toUpperCase()} = ${value}`)
+  // Both pages, so the poke survives the board swap.
+  life.worker.postMessage({ type: 'poke', addrs: [BOARD.a + cell, BOARD.b + cell], value })
+  note(`Poked $${(BOARD.a + cell).toString(16).toUpperCase()} = ${value}`)
 }
 
 // A handle for tests and the console: ?debug
-if (params.has('debug')) window.exo = { avatar, controls, bar, floor, abode, portal, camera, renderer, ledger, presence, chipFrame, cafe, get side() { return side }, get tick() { return tick } }
+if (params.has('debug')) window.exo = { mist, car, life, show, face, give, avatar, controls, bar, floor, abode, portal, camera, renderer, ledger, presence, chipFrame, cafe, get side() { return side }, get tick() { return tick } }
 
 // --- Loop ---
 const clock = new THREE.Clock()
@@ -254,7 +321,24 @@ addEventListener('resize', () => {
   composer.setSize(innerWidth, innerHeight)
 })
 
+// What being here costs the main thread, as a share of a core: the work
+// of each frame over the time between frames.
+let busy = 0, span = 0
 renderer.setAnimationLoop(() => {
+  const t0 = performance.now()
+  frame()
+  busy += performance.now() - t0
+})
+let lastFrameAt = performance.now()
+setInterval(() => {
+  const now = performance.now()
+  span = now - lastFrameAt
+  lastFrameAt = now
+  mist.implicitMain = span ? Math.min(1, busy / span) : 0
+  busy = 0
+}, 2000)
+
+function frame() {
   const dt = Math.min(clock.getDelta(), 0.1)
   const now = clock.elapsedTime
   wall.tick(dt)
@@ -264,7 +348,7 @@ renderer.setAnimationLoop(() => {
 
   // Walk, relative to where the camera looks. Faster when zoomed out:
   // you're flying over the die then, not strolling.
-  const inp = entered ? controls.input() : { x: 0, f: 0, run: false }
+  const inp = entered && !riding ? controls.input() : { x: 0, f: 0, run: false }
   fwd.set(-Math.sin(controls.yaw), 0, -Math.cos(controls.yaw))
   right.set(-fwd.z, 0, fwd.x)
   const speed = (inp.run ? 8 : 3.2) * Math.max(1, controls.dist / 25)
@@ -273,6 +357,12 @@ renderer.setAnimationLoop(() => {
   prevPos.copy(pos)
   pos.addScaledVector(vel, dt)
   collide(pos, side === 0 ? bar.colliders : abode.colliders)
+  car.update(dt)
+  if (riding) {
+    car.group.updateMatrixWorld()
+    car.deckPoint(pos)
+    heading = car.group.rotation.y
+  }
   const moving = vel.lengthSq() > 0.01
   if (moving) {
     const want = Math.atan2(vel.x, vel.z)
@@ -299,8 +389,11 @@ renderer.setAnimationLoop(() => {
     face.poll()
     avatar.face = face.landmarks
     avatar.headAim.set(face.head.pitch, face.head.yaw, face.head.roll)
+    avatar.armAim.L = face.arms.L
+    avatar.armAim.R = face.arms.R
   } else {
     avatar.headAim.set(0, 0, 0)
+    avatar.armAim.L = avatar.armAim.R = null
   }
   if (avatar.tier !== ledger.tier) {
     avatar.setTier(ledger.tier)
@@ -318,8 +411,13 @@ renderer.setAnimationLoop(() => {
   bar.update(dt, floor, tick, now)
   abode.update(abodeFrame.time, now)
   gate.update(now, side === 0 ? pos : null)
-  $('prompt').hidden = !gate.near
-  $('prompt').textContent = 'E · jack into NetMap'
+  const nearCar = side === 0 && pos.distanceTo(car.group.position) < 4.5
+  const prompt = riding ? 'E · step off the Art Car' : nearCar ? 'E · ride the Art Car' : gate.near ? 'E · jack into NetMap' : null
+  $('prompt').hidden = !entered || !prompt
+  if (prompt) $('prompt').textContent = prompt
+  for (const c of coins) c.userData.setLit(mist.sims.get(c.userData.sim).state === 'running')
+  coins[0].position.y = 5.3 + Math.sin(now * 2) * 0.08
+  coins[1].position.y = 4.1 + Math.sin(now * 2 + 1) * 0.08
 
   // Max: a hello when you first come near, then the odd remark.
   const nearMax = side === 0 && pos.distanceTo(bar.max.group.position) < 7
@@ -339,12 +437,15 @@ renderer.setAnimationLoop(() => {
       a.group.position.lerp(new THREE.Vector3(...s.p), 0.5)
       a.group.rotation.y = s.yaw
       a.headAim.set(...s.head)
+      a.armAim.L = s.arms?.[0] ?? null
+      a.armAim.R = s.arms?.[1] ?? null
       if (a.tier !== s.tier) a.setTier(s.tier)
     }
     if (entered) {
       presence.publish({
         name: me.name, hue: me.hue, tier: avatar.tier, scene: side ? 'abode' : 'world',
         p: pos.toArray(), yaw: heading, head: avatar.headAim.toArray().slice(0, 3),
+        arms: [avatar.armAim.L, avatar.armAim.R],
       })
     }
   }
@@ -359,7 +460,7 @@ renderer.setAnimationLoop(() => {
 
   portal.render(renderer, camera, side, now)
   composer.render(dt)
-})
+}
 
 function hud() {
   const p = avatar.group.position
@@ -377,7 +478,8 @@ function hud() {
   $('where').textContent = where
   if (tick) {
     $('chip').textContent = `${(chipHz / 2000).toFixed(2)} kHz (native 1 MHz)\nLife gen ${tick.gen} · cell ${tick.cursor} · ${(tick.regs.halfCycles / 2e6).toFixed(3)} M cycles`
-    bar.paintReadouts(tick, formatRate(chipFrame.absoluteRate))
+    const r = life.receipts[0]
+    bar.paintReadouts(tick, formatRate(chipFrame.absoluteRate), r?.donor ? `POWERED BY ${r.donor.toUpperCase()}` : 'IMPLICIT')
   }
   $('frames').textContent = `cafe ×1 · chip ${formatRate(chipFrame.absoluteRate)} · abode ${formatRate(abodeFrame.absoluteRate)}`
   $('tier').textContent = TIERS[avatar.tier].name

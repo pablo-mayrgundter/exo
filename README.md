@@ -21,12 +21,21 @@ by the community that gathers at [exo.cafe](https://exo.cafe).
   native 1 MHz, about 1 : 500 in bar time. Through the arch in the west wall
   is Pablo's abode, where the sky turns 600 times faster than the bar's.
   [cosmic.js](src/cosmic/frames.js) does the reprojection between frames.
+- **A gift economy of compute.** Being here already costs your machine
+  something (the dashboard measures it). On top of that you set a budget,
+  a share of a core, and give it to things by clicking their **$**: the
+  Life wall, the Art Car. Each frame they compute comes with a receipt
+  (cycles, your share, hashes of input and output); Life's verify in
+  microseconds in JS, and the generations you powered carry your name.
+  With nobody giving, things drop back to their implicit baseline.
 - **Rez is earned.** Guests rez in voxels (0.16 m, the minecrafty body).
-  Donate compute to the shared simulation and your body re-voxelizes
-  finer, until it's smooth.
-- **Your face, your avatar.** *Mirror my face* runs MediaPipe's face
-  landmarker in your browser and draws your face on your visor; your head
-  turns its head. Video never leaves your machine.
+  Every cycle you give re-voxelizes you finer, until you're smooth.
+- **The Art Car** outside the bar runs its light show on a 6502 of its own
+  and drives as fast as that chip computes. Press E to ride.
+- **Your face, your avatar.** *Mirror my face* runs MediaPipe's face and
+  pose landmarkers in your browser: your face on the visor, your head
+  turning its head, your arms raising its arms. Video never leaves your
+  machine.
 - **Out the door, the Grid.** A gate on the street jacks you into
   [NetMap](https://pablo-mayrgundter.github.io/netmap/), maps of the
   internet you can travel.
@@ -45,7 +54,7 @@ in [docs/PLAN.md](docs/PLAN.md).
 ```sh
 npm install
 npm run dev        # http://localhost:5173
-npm test           # assembler, chip (one Life generation, ~15 s), frames, ledger
+npm test           # assembler, chips (one Life generation, ~15 s), frames, ledger
 npm run build      # → dist/, deployable as static files
 ```
 
@@ -65,11 +74,11 @@ until the Synchronizer (Matrix and murmur) replaces it.
 
 | Path | What |
 |---|---|
-| [src/chip/](src/chip) | the 6502: switch-level sim (`sim.js`), assembler, Life program, worker |
+| [src/chip/](src/chip) | the 6502: switch-level sim (`sim.js`), assembler, Life and light-show programs, worker |
 | [src/world/](src/world) | the chip as a city floor, the bar, the abode, portals, textures |
 | [src/avatar/](src/avatar) | voxel and smooth avatars, face tracking |
 | [src/cosmic/](src/cosmic) | frames of space and time |
-| [src/mist/](src/mist) | the ledger: donated compute → rez |
+| [src/mist/](src/mist) | the gift economy: scheduler, dashboard, receipts, rez ledger |
 | [src/net/](src/net) | presence, behind a transport interface |
 | [public/chip/6502.json](public/chip) | the netlist and layout, from `scripts/import-visual6502.mjs` |
 | [docs/](docs) | vision and plan |

@@ -21,6 +21,8 @@ export const TIERS = [
 ]
 
 const cap = (a, b, r) => ({ kind: 'capsule', a, b, r })
+const ARM_TMP = new THREE.Quaternion()
+const ARM_V = new THREE.Vector3()
 const ball = (c, r) => ({ kind: 'sphere', a: c, r })
 
 // Pivots in avatar space (metres, feet at the origin, facing +z); prims in
@@ -32,6 +34,11 @@ export const PARTS = {
   armR: { pivot: [-0.25, 1.36, 0], prims: [cap([-0.02, 0, 0], [-0.05, -0.55, 0], 0.052)] },
   legL: { pivot: [0.095, 0.94, 0], prims: [cap([0, -0.02, 0], [0, -0.86, 0.01], 0.072)] },
   legR: { pivot: [-0.095, 0.94, 0], prims: [cap([0, -0.02, 0], [0, -0.86, 0.01], 0.072)] },
+}
+// Each arm's rest direction, shoulder to hand.
+const REST = {
+  L: new THREE.Vector3(0.05, -0.55, 0).normalize(),
+  R: new THREE.Vector3(-0.05, -0.55, 0).normalize(),
 }
 // The bounding region a body is allocated at spawn, in metres.
 export const BODY_BOX = { min: [-0.36, 0, -0.2], max: [0.36, 1.84, 0.2] }
@@ -138,6 +145,8 @@ export class Avatar {
     this.phase = 0
     this.blink = 0
     this.headAim = new THREE.Euler()
+    /** Tracked arm directions (avatar space, unit), or null to swing. */
+    this.armAim = { L: null, R: null }
     /** Face landmarks (normalized, mirrored) to draw on the visor, or null. */
     this.face = null
     this.spawn = 1
@@ -218,10 +227,16 @@ export class Avatar {
     const { armL, armR, legL, legR, head, torso } = this.parts
     legL.pivot.rotation.x = s * swing
     legR.pivot.rotation.x = -s * swing
-    armL.pivot.rotation.x = -s * swing * 0.8
-    armR.pivot.rotation.x = s * swing * 0.8
-    armL.pivot.rotation.z = 0.08
-    armR.pivot.rotation.z = -0.08
+    armL.pivot.rotation.set(-s * swing * 0.8, 0, 0.08)
+    armR.pivot.rotation.set(s * swing * 0.8, 0, -0.08)
+    // Tracked arms override the swing: aim each from its rest direction.
+    for (const [side, part] of [['L', armL], ['R', armR]]) {
+      const aim = this.armAim[side]
+      if (!aim) { part.aimed = null; continue }
+      const want = ARM_TMP.setFromUnitVectors(REST[side], ARM_V.set(aim[0], aim[1], aim[2]))
+      part.aimed = (part.aimed ?? part.pivot.quaternion.clone()).slerp(want, 1 - Math.exp(-dt * 14))
+      part.pivot.quaternion.copy(part.aimed)
+    }
     torso.pivot.position.y = PARTS.torso.pivot[1] + Math.abs(Math.cos(this.phase)) * swing * 0.04 + Math.sin(time * 1.7) * 0.004
     const k = 1 - Math.exp(-dt * 12)
     head.pivot.rotation.x += (this.headAim.x - head.pivot.rotation.x) * k

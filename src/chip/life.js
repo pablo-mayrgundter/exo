@@ -150,3 +150,27 @@ glider: .byte $01, $12, $20, $21, $22, $ff
         .org $fffc
         .word start, start
 `
+
+/** One generation of Life on the 16×16 torus, in JS: the cheap check. */
+export function lifeStep(cells) {
+  const out = new Uint8Array(256)
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+    let n = 0
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      if (dx || dy) n += cells[((y + dy) & 15) * 16 + ((x + dx) & 15)]
+    }
+    const c = cells[y * 16 + x]
+    out[y * 16 + x] = n === 3 || (n === 2 && c) ? 1 : 0
+  }
+  return out
+}
+
+/**
+ * Checks a Life receipt: the chip took ~73k cycles to compute a generation
+ * that JS checks in microseconds. That asymmetry is what lets a given frame
+ * stand as proof of work.
+ */
+export function verifyLife(r) {
+  const want = lifeStep(r.inputBoard)
+  return want.every((v, i) => v === r.outputBoard[i])
+}
