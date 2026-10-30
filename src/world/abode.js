@@ -225,8 +225,8 @@ export function makeAbode({ renderer } = {}) {
   portalAnchor.position.set(0, 1.6, 16)
   portalAnchor.rotation.y = Math.PI // its +z faces the temple
   scene.add(portalAnchor)
-  // Keep visitors from walking round behind the arch.
-  colliders.push([-1.5, 16.05, 1.5, 17])
+  // No collider at the arch: it would stop you walking back through it.
+  // Coming at it from behind isn't a crossing (portal.js checks the side).
 
   return {
     scene, colliders, portalAnchor,

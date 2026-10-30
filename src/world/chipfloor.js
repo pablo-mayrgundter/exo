@@ -1,11 +1,12 @@
 // The street: the 6502's layout as a Tron city floor. Every polygon of
-// every layer is drawn at its real position (0.1 m per layout unit, so the
-// die is a ~900 m district) and lit by its node's average voltage over the
-// last 50 ms of simulation, read from a texture the worker updates.
+// every layer is drawn where it is on the die, in body units (0.1 per
+// layout unit; the scene's root scales body units to micrometres, so the
+// die is its true ~3.9 × 4.3 mm), and lit by its node's average voltage
+// over the last 50 ms of simulation, read from a texture the worker
+// updates.
 import * as THREE from 'three'
 import { C } from '../theme.js'
 
-export const CHIP_SCALE = 0.1 // metres per layout unit
 
 // visual6502's layers: 0 metal, 1 switched diffusion, 2 input diode,
 // 3 grounded diffusion, 4 powered diffusion, 5 polysilicon.
@@ -17,7 +18,7 @@ const LAYER_LO = [0x0c2a4a, 0x2a2208, 0x2a2208, 0x0b2a12, 0x2a0d08, 0x26082a]
  * @param {{segdefs: number[][], nodenames: Record<string, number>}} data
  * @param {import('../cosmic/frames.js').Frame} frame chip layout → world
  */
-export function makeChipFloor(data, frame) {
+export function makeChipFloor(data, frame, { unit = 1 } = {}) {
   let nodeCount = 0
   for (const s of data.segdefs) nodeCount = Math.max(nodeCount, s[0] + 1)
   const texW = 2048
@@ -62,12 +63,14 @@ export function makeChipFloor(data, frame) {
     hi: { value: LAYER_HI.map((c) => new THREE.Color(c)) },
     lo: { value: LAYER_LO.map((c) => new THREE.Color(c)) },
     gain: { value: 1 },
+    unit: { value: unit }, // scene units per body unit, for distance fades
   }
   const vertexShader = `
     attribute float node;
     attribute float layer;
     uniform sampler2D states;
     uniform float texW;
+    uniform float unit;
     varying float vLevel;
     varying float vLayer;
     varying float vFade;
@@ -79,7 +82,7 @@ export function makeChipFloor(data, frame) {
       // Lines crowd together with distance and at grazing angles; dim them
       // so the die doesn't wash out into a white horizon.
       float graze = clamp(normalize(cameraPosition - wp.xyz).y * 2.5, 0.04, 1.0);
-      vFade = clamp(40.0 / -mv.z, 0.1, 1.0) * graze;
+      vFade = clamp(40.0 * unit / -mv.z, 0.1, 1.0) * graze;
       gl_Position = projectionMatrix * mv;
     }`
   const pick = `

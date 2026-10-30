@@ -69,7 +69,7 @@ we play with art and physics to move from the Cloud to the Mist.
 |---|---|
 | Building is a PCB schematic in a corner of Pablo's CPU | The bar's walls are circuit board; it sits on the 6502's top-left pad, NMI, the one interrupt you can't ignore |
 | Lights fade with voltage changes on the circuit's lines | Light tubes follow db0–7 and ab0–15, the counter edge clk0, each line's average voltage over 50 ms |
-| A street that's really a chip trace | The die at 0.1 m per unit; the HUD names the street after its node (`NMI St`, `DB3 St`, …) |
+| A street that's really a chip trace | The die at its true size, in µm; you're ~8 µm tall; the HUD names the street after its node (`NMI St`, `DB3 St`, …) |
 | Simulate it running Life | Life in 6502 assembly, on a transistor-level sim; the Life wall shows RAM as it's written |
 | Different timescales, reprojected | cosmic.js frames: bar ×1, chip ~1 : 500, abode ×600 |
 | Portal to Pablo's abode | A render-target portal in the west wall; the abode is a temple plaza after the photo of the glowing tree |

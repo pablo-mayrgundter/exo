@@ -11,7 +11,8 @@ import { job as lifeJob, BOARD, ZP as LIFE_ZP, verifyLife } from './chip/life.js
 import { job as showJob, LEDS, ZP as SHOW_ZP } from './chip/lightshow.js'
 import { job as maxJob, ZP as MAX_ZP } from './chip/max.js'
 import { buildVcpu } from './chip/vcpu.js'
-import { makeChipFloor, CHIP_SCALE } from './world/chipfloor.js'
+import { makeChipFloor } from './world/chipfloor.js'
+import { BODY_UM, BODY_PER_LAYOUT, CHIP_UNIT_UM, DIE_GEO, formatLength } from './cosmic/units.js'
 import { makeBar } from './world/bar.js'
 import { makeAbode, ABODE_RATE } from './world/abode.js'
 import { PortalPair } from './world/portal.js'
@@ -39,15 +40,17 @@ const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 60
 
 // --- Frames (cosmic.js): wall time and metres at the root ---
 const wall = new Frame('wall')
-const cafe = new Frame('Exo Cafe', { parent: wall })
+// The street's scene unit is the micrometre (cosmic/units.js); the bar and
+// its visitors are built in body units of ~4.47 µm, sized to the chip.
+const cafe = new Frame('Exo Cafe', { parent: wall, scale: BODY_UM })
 // Exo Cafe sits on the NMI pad, the top-left corner of the die.
 const NMI_PAD = [413.5, 9612.5]
 let chipHz = 0 // half-cycles per wall second, as measured
 const chipFrame = new Frame('6502', {
   parent: cafe,
-  scale: CHIP_SCALE,
+  scale: BODY_PER_LAYOUT,
   flipY: true,
-  origin: [-NMI_PAD[0] * CHIP_SCALE, 0, NMI_PAD[1] * CHIP_SCALE],
+  origin: [-NMI_PAD[0] * BODY_PER_LAYOUT, 0, NMI_PAD[1] * BODY_PER_LAYOUT],
   rate: () => chipHz / 2 / 1e6, // chip seconds per bar second, against its native 1 MHz
 })
 const abodeFrame = new Frame('Abode', { parent: wall, rate: ABODE_RATE })
@@ -56,11 +59,14 @@ const abodeFrame = new Frame('Abode', { parent: wall, rate: ABODE_RATE })
 const world = new THREE.Scene()
 world.name = 'world'
 world.background = new THREE.Color(C.void)
-world.fog = new THREE.FogExp2(C.void, 0.0009)
+world.fog = new THREE.FogExp2(C.void, 0.0009 / BODY_UM)
+// Scene units are micrometres; everything in the street is built in body
+// units, so the scene's root carries the scale.
+world.scale.setScalar(BODY_UM)
 world.add(makeGrid())
 
 const data = await (await fetch(`${import.meta.env.BASE_URL}chip/6502.json`)).json()
-const floor = makeChipFloor(data, chipFrame)
+const floor = makeChipFloor(data, chipFrame, { unit: BODY_UM })
 world.add(floor.group)
 const bar = makeBar({ names: data.nodenames })
 world.add(bar.group)
@@ -406,14 +412,18 @@ function frame() {
   }
   avatar.group.rotation.y = heading
 
-  // Through the arch?
-  const link = portal.crossing(side, prevPos, pos)
+  // Through the arch? The link works in scene units: micrometres in the
+  // street, metres in the abode, so it carries a real magnification
+  // (~224,000×) along with its turn.
+  const link = portal.crossing(side, prevPos.clone().multiplyScalar(unitOf(side)), pos.clone().multiplyScalar(unitOf(side)))
   if (link) {
-    const q = new THREE.Quaternion().setFromRotationMatrix(link)
-    pos.applyMatrix4(link)
+    const q = new THREE.Quaternion()
+    link.decompose(new THREE.Vector3(), q, new THREE.Vector3())
+    pos.multiplyScalar(unitOf(side)).applyMatrix4(link)
     heading += new THREE.Euler().setFromQuaternion(q, 'YXZ').y
     controls.yaw += new THREE.Euler().setFromQuaternion(q, 'YXZ').y
     side = 1 - side
+    pos.divideScalar(unitOf(side))
     pos.y = side === 0 ? 0.08 : 0
     scenes[side].add(avatar.group)
     renderPass.scene = scenes[side]
@@ -496,9 +506,15 @@ function frame() {
   // Camera: orbit the avatar's head; out past the die when zoomed far.
   const target = pos.clone().add(new THREE.Vector3(0, 1.5, 0))
   controls.place(camera, target)
-  camera.far = Math.max(600, controls.dist * 4)
+  const unit = unitOf(side)
+  if (unit !== 1) {
+    camera.position.multiplyScalar(unit)
+    camera.lookAt(target.multiplyScalar(unit))
+  }
+  camera.near = 0.05 * unit
+  camera.far = Math.max(600, controls.dist * 4) * unit
   camera.updateProjectionMatrix()
-  world.fog.density = controls.dist > 60 ? 0.00008 : 0.0009
+  world.fog.density = (controls.dist > 60 ? 0.00008 : 0.0009) / BODY_UM
 
   portal.render(renderer, camera, side, now)
   composer.render(dt)
@@ -513,9 +529,11 @@ function hud() {
     const [cx, cy] = reproject([p.x, p.y, p.z], cafe, chipFrame)
     const hit = floor.probe(cx, cy)
     const layer = ['metal', 'diffusion', 'diode', 'ground', 'power', 'poly'][hit?.layer] ?? ''
+    // Position on the die in real units, from its lower-left corner.
+    const at = `${formatLength(cx * CHIP_UNIT_UM)}, ${formatLength(cy * CHIP_UNIT_UM)}`
     where = hit
-      ? `${hit.name ? hit.name.toUpperCase() + ' St' : 'Node ' + hit.node} · ${layer} · ${Math.round(cx)}, ${Math.round(cy)}`
-      : cx > 0 && cx < 9000 && cy > 0 && cy < 10000 ? `The die · ${Math.round(cx)}, ${Math.round(cy)}` : 'The Grid'
+      ? `${hit.name ? hit.name.toUpperCase() + ' St' : 'Node ' + hit.node} · ${layer} · ${at}`
+      : cx > 0 && cx < 9000 && cy > 0 && cy < 10000 ? `The die · ${at}` : 'The Grid'
   }
   $('where').textContent = where
   if (tick) {
@@ -523,7 +541,10 @@ function hud() {
     const r = life.receipts[0]
     bar.paintReadouts(tick, formatRate(chipFrame.absoluteRate), r?.donor ? `POWERED BY ${r.donor.toUpperCase()}` : 'IMPLICIT')
   }
-  $('frames').textContent = `cafe ×1 · chip ${formatRate(chipFrame.absoluteRate)} · abode ${formatRate(abodeFrame.absoluteRate)}`
+  // Space: you're ~8 µm tall on the die, 1.8 m in the abode. Time: each place's clock.
+  const height = side === 0 ? formatLength(1.84 * BODY_UM) : '1.8 m'
+  $('frames').textContent = `you ${height} tall · 1 unit = ${side === 0 ? '1 µm' : '1 m'} · die at ${DIE_GEO.lat}° N ${DIE_GEO.lon}° E\n` +
+    `cafe ×1 · chip ${formatRate(chipFrame.absoluteRate)} · abode ${formatRate(abodeFrame.absoluteRate)}`
   $('tier').textContent = TIERS[avatar.tier].name
   $('rez').style.width = `${Math.round(ledger.progress * 100)}%`
   const al = allocation(avatar.tier)
@@ -557,6 +578,9 @@ function collide(p, boxes) {
   }
 }
 
+/** Scene units per body unit on a side: µm in the street, metres in the abode. */
+function unitOf(sd) { return sd === 0 ? BODY_UM : 1 }
+
 function wrapAngle(a) { return Math.atan2(Math.sin(a), Math.cos(a)) }
 
 /** The Grid: an endless floor of lines under everything, centred on the camera. */
@@ -571,7 +595,7 @@ function makeGrid() {
       void main(){
         float d = length(vW.xz - cameraPosition.xz);
         float a = lines(vW.xz, 10.0) * 0.5 + lines(vW.xz, 100.0) * 0.8;
-        a *= exp(-d / max(400.0, cameraPosition.y * 6.0));
+        a *= exp(-d / max(${(400 * BODY_UM).toFixed(1)}, cameraPosition.y * 6.0));
         gl_FragColor = vec4(color * a, a);
       }`,
   }))

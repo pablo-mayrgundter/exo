@@ -203,13 +203,17 @@ the shape of the net.*
 
 *cosmic.js: a library for cosmography, to know where we are in the cosmos.*
 
-### E5.0 Real units 🔜 (T6, T7, T4)
-*Everything in metres (portal RFC 0001 §6.1), with each place's scale
-declared, so a portal between places lines up.*
-- **S5.0.1** As a visitor, the HUD tells me true sizes: the die is ~3.9 × 4.3 mm, a layout unit ~0.45 µm, the streets ~10 µm wide, and at 0.1 m per unit I'm ~8 µm tall, about the 6502's feature size.
-  - [ ] The chip frame in real metres (0.45 µm per unit), and a magnification frame for the visitor (~224,000×)
-  - [ ] A geo anchor for the die (ECEF metres), so zooming out of the chip can carry on to the room, the city, NetMap's globe
-- **S5.0.2** As a developer, frames declare `scale` and nest rigidly, matching RFC 0001 §9.
+### E5.0 Real units ✅ / 🔜 (T6, T7, T4)
+*Everything in real units with each place's scale declared (portal RFC
+0001 §6.1), so portals between places line up.*
+- **S5.0.1** As a visitor, I'm at true scale on a true-size chip. ✅
+  - [x] The street's scene unit is the micrometre (`cosmic/units.js`); the die is its real ~3.9 × 4.3 mm (0.447 µm per layout unit)
+  - [x] Visitors and the bar keep their proportions: ~4.47 µm per body unit, so you're ~8 µm tall, about the 6502's 8 µm design rule
+  - [x] The HUD gives positions on the die in µm and mm, and your height
+  - [x] The abode stays at human scale in metres; the portal's link carries the ~224,000× magnification
+- **S5.0.2** As a developer, the die has a place on Earth: 0° N 0° E, sea level (`sceneToEcef`). ✅
+- **S5.0.3** As a developer, Earth-scale guests (NetMap) compose with the µm street without float32 trouble. 🔜 (portal RFC)
+  - [ ] A global scene scale and nested frames, composed in doubles, relative to the eye
 
 ### E5.1 Frames ✅ (T6)
 - **S5.1.1** As a developer, I can place a scene in a frame with its own scale, orientation and clock, and map points and durations between frames. ✅
