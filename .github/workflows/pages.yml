@@ -1,22 +1,23 @@
 name: Pages
 
+# Builds the site and deploys it to the root of the gh-pages branch, which
+# GitHub Pages serves at exo.cafe (public/CNAME). clean-exclude keeps the PR
+# previews (.github/workflows/pr-preview.yml) alive across main deploys.
+
 on:
   push:
     branches: [main]
-  pull_request:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
-  group: pages-${{ github.ref }}
+  group: gh-pages
   cancel-in-progress: true
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,18 +28,12 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
-      - uses: actions/upload-pages-artifact@v3
-        if: github.ref == 'refs/heads/main'
+      - name: Deploy to gh-pages
+        uses: JamesIves/github-pages-deploy-action@v4
         with:
-          path: dist
-
-  deploy:
-    if: github.ref == 'refs/heads/main'
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          folder: dist
+          branch: gh-pages
+          clean: true
+          clean-exclude: |
+            pr-preview
+            pr-preview/**

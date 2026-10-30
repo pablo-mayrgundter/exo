@@ -27,6 +27,23 @@ describe('Chip6502', () => {
   })
 })
 
+describe('Chip6502 over long runs', () => {
+  it('keeps working when its generation marks wrap past 2^32', () => {
+    const run = (gen) => {
+      const chip = new Chip6502(data)
+      load(chip, source)
+      chip.groupGen = gen
+      chip.queueGen = gen
+      chip.reset()
+      for (let i = 0; i < 2000; i++) chip.halfStep()
+      return chip.stateString() + chip.memory.slice(0, 0x400).join()
+    }
+    // Starting just short of the limit, the marks wrap during the run; the
+    // chip must end up exactly where a fresh one does.
+    expect(run(0xffffffff - 300)).toBe(run(0))
+  })
+})
+
 /** One generation of Life on a 16×16 torus, in JS. */
 function lifeStep(cells) {
   const out = new Uint8Array(256)

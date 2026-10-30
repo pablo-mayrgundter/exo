@@ -22,6 +22,10 @@ would otherwise rediscover.
   `sim.js`, check the golden values in `test/sim.test.js`; to regenerate
   them, run the original `chipsim.js` + `macros.js` in a Node `vm` with DOM
   stubs and compare `stateString()` per half-step.
+- **Long runs.** The sim does billions of group walks an hour. Anything
+  counted per walk must survive 2^32: generation marks in `Uint32Array`s
+  once wrapped after about an hour and the walk recursed forever (`test/sim.test.js`,
+  "wrap"). Test long-run behaviour by starting counters near their limit.
 - **Browser checks: headless Chromium on SwiftShader.** Launch Playwright
   with `--use-angle=swiftshader --enable-unsafe-swiftshader`; don't run
   `playwright install` in cloud sessions. Use `?enter&debug` and drive
@@ -42,7 +46,12 @@ would otherwise rediscover.
 ## Verification and reporting
 
 - Rendering changes need screenshots: the bar, the street at ~100 m, the
-  die from orbit, and the abode through the arch.
+  die from orbit, and the abode through the arch. Every PR also gets a live
+  preview at `https://exo.cafe/pr-preview/pr-<n>/`
+  (`.github/workflows/pr-preview.yml`); name what to check there.
+- Deploys go to the `gh-pages` branch: main at the root, previews under
+  `pr-preview/`. The main deploy's `clean-exclude` keeps the previews; keep
+  it there, and keep `public/CNAME`, or exo.cafe falls off the site.
 - Report what you couldn't verify (a real camera, a phone, real GPUs).
 
 ## Pull requests

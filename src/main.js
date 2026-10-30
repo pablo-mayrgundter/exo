@@ -83,6 +83,11 @@ const program = [...assemble(lifeSource).bytes]
 const worker = new Worker(new URL('./chip/worker.js', import.meta.url), { type: 'module' })
 let tick = null
 worker.onmessage = (e) => {
+  if (e.data.type === 'halt') {
+    console.error('The 6502 halted and was reset:', e.data.message)
+    note('The 6502 crashed and was power-cycled.')
+    return
+  }
   if (e.data.type !== 'tick') return
   tick = e.data
   // Smooth the measured rate a little; the slices jitter.

@@ -18,13 +18,8 @@ const GUEST_DUTY = 0.5 // keep in step with main.js
 self.onmessage = (e) => {
   const m = e.data
   if (m.type === 'init') {
-    chip = new Chip6502(m.data)
-    for (const [a, b] of m.program) chip.memory[a] = b
-    chip.onWrite = (a, d) => {
-      if (a >= BOARD.a && a < BOARD.b + 256) { board[a & 0xff] = d; cursor = a & 0xff }
-    }
-    chip.reset()
-    accum = new Uint16Array(chip.nodeCount)
+    init = m
+    boot()
     loop()
   } else if (m.type === 'duty') {
     duty = Math.max(0.02, Math.min(0.95, m.value))
@@ -36,7 +31,31 @@ self.onmessage = (e) => {
   }
 }
 
+let init = null
+function boot() {
+  chip = new Chip6502(init.data)
+  for (const [a, b] of init.program) chip.memory[a] = b
+  chip.onWrite = (a, d) => {
+    if (a >= BOARD.a && a < BOARD.b + 256) { board[a & 0xff] = d; cursor = a & 0xff }
+  }
+  chip.reset()
+  accum = new Uint16Array(chip.nodeCount)
+  board.fill(0)
+}
+
 function loop() {
+  try {
+    slice()
+  } catch (err) {
+    // A chip that throws would otherwise leave the bar dark for good: say
+    // so, and power-cycle it.
+    self.postMessage({ type: 'halt', message: String(err?.message ?? err) })
+    boot()
+    setTimeout(loop, SLICE_MS)
+  }
+}
+
+function slice() {
   const t0 = performance.now()
   const budget = SLICE_MS * duty
   const before = chip.halfCycles

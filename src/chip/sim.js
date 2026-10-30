@@ -97,7 +97,7 @@ export class Chip6502 {
     for (let j = 0; j < 100; j++) { // loop limiter, as in the original
       if (list.length === 0) return
       this.next = []
-      this.queueGen++
+      this.queueGen = bump(this.queued, this.queueGen)
       for (let i = 0; i < list.length; i++) this.recalcNode(list[i])
       list = this.next
     }
@@ -105,7 +105,7 @@ export class Chip6502 {
 
   recalcNode(node) {
     if (node === this.gnd || node === this.pwr) return
-    this.groupGen++
+    this.groupGen = bump(this.inGroup, this.groupGen)
     this.groupLen = 0
     this.addNodeToGroup(node)
     const v = this.groupValue()
@@ -264,6 +264,19 @@ export class Chip6502 {
     }
     return s
   }
+}
+
+/**
+ * The next generation mark for a Uint32Array of marks. The marks can't hold
+ * past 2^32 - 1, so before the counter gets there the marks are cleared and
+ * it starts over; otherwise stored marks stop matching the counter and every
+ * node looks unvisited (an hour or so into a run, the group walk recursed
+ * forever).
+ */
+function bump(marks, gen) {
+  if (gen < 0xfffffffe) return gen + 1
+  marks.fill(0)
+  return 1
 }
 
 /** Compressed sparse rows: start[i]..start[i+1] index items for row i. */
