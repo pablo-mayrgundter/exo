@@ -44,6 +44,14 @@ would otherwise rediscover.
   Chromium as `proxy: { server: process.env.HTTPS_PROXY }`; its port changes
   between sessions, so don't hard-code it. To test arm aiming without a
   camera, set `exo.face` to `{running: true, poll() {}, arms: {L: [0, 1, 0], …}}`.
+- **Mocap test stills.** Crop poses into y4m stills (as for the face) and
+  run them through `?enter&debug` with *Mirror my face*; `exo.face.hands`
+  and `.arms` say what was seen. MediaPipe tasks-vision 1.2 labels hands
+  as the person's own on our unmirrored video (the right hand is "Right"),
+  despite older docs saying labels assume a mirrored image; hands are
+  matched to the pose's wrists first anyway. The main loop sets the
+  avatar's heading every frame, so a screenshot "from the front" set via
+  `rotation.y` is really from behind.
 - Don't `pkill -f "vite preview"` from a command that itself contains that
   text: it kills its own shell. Run the preview server as a background task.
 - **Colours in shaders are linear.** Hex colours through `THREE.Color` are

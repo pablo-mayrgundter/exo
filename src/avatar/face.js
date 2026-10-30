@@ -1,6 +1,7 @@
 // Mocap: the visitor's camera → MediaPipe's Face Landmarker → the avatar's
-// visor (contours of your face) and head (yaw, pitch, roll); and its Pose
-// Landmarker → where your arms point, so raising your hands raises theirs.
+// visor (contours of your face) and head (yaw, pitch, roll); its Pose
+// Landmarker → where your arms point; and its Hand Landmarker → your hands,
+// finger by finger (thumbs up, peace, OK, fists).
 // Everything runs in the browser; video frames never leave the machine.
 // The library and model load only when the visitor turns the camera on.
 
@@ -9,6 +10,7 @@
 const WASM = `${import.meta.env.BASE_URL}mediapipe`
 const MODEL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task'
 const POSE_MODEL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task'
+const HAND_MODEL = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task'
 // Pose landmarks: shoulders, elbows and wrists, left (the person's) first.
 const ARM = { L: [11, 13, 15], R: [12, 14, 16] }
 
@@ -30,6 +32,14 @@ export class FaceTracker {
      */
     this.arms = { L: null, R: null }
     this.pose = null
+    /**
+     * Each hand's 21 landmarks relative to its wrist, in avatar space
+     * (metres; +x the avatar's left, +y up, +z forward), as 63 numbers, or
+     * null when that hand isn't in view.
+     */
+    this.hands = { L: null, R: null }
+    this.handLandmarker = null
+    this.wristsImg = { L: null, R: null } // where the pose saw the wrists, image coords
     this.lastVideoTime = -1
     this.frames = 0
   }
@@ -68,6 +78,16 @@ export class FaceTracker {
     } catch (err) {
       console.warn('No arm tracking:', err)
     }
+    try {
+      const { HandLandmarker } = await import('@mediapipe/tasks-vision')
+      this.handLandmarker = await HandLandmarker.createFromOptions(fileset, {
+        baseOptions: { modelAssetPath: HAND_MODEL, delegate: 'GPU' },
+        runningMode: 'VIDEO',
+        numHands: 2,
+      })
+    } catch (err) {
+      console.warn('No hand tracking:', err)
+    }
     this.running = true
     return this.video
   }
@@ -79,7 +99,10 @@ export class FaceTracker {
     this.landmarker = null
     this.pose?.close()
     this.pose = null
+    this.handLandmarker?.close()
+    this.handLandmarker = null
     this.arms = { L: null, R: null }
+    this.hands = { L: null, R: null }
     this.landmarks = null
     this.video = null
   }
@@ -89,15 +112,27 @@ export class FaceTracker {
     if (!this.running || !this.landmarker || this.video.readyState < 2) return
     if (this.video.currentTime === this.lastVideoTime) return
     this.lastVideoTime = this.video.currentTime
-    // Face and pose take turns, so each costs half the frames.
-    if (this.pose && this.frames++ % 2 === 1) {
+    // Face, pose and hands take turns, so each costs a third of the frames.
+    const turn = this.frames++ % 3
+    if (turn === 1 && this.pose) {
       const p = this.pose.detectForVideo(this.video, performance.now())
       const w = p.worldLandmarks?.[0], img = p.landmarks?.[0]
       for (const side of ['L', 'R']) {
         const [sh, , wr] = ARM[side]
         const seen = img && img[sh].visibility > 0.5 && img[wr].visibility > 0.5
         this.arms[side] = seen && w ? armDirection(w[sh], w[wr]) : null
+        this.wristsImg[side] = img && img[wr].visibility > 0.3 ? img[wr] : null
       }
+      return
+    }
+    if (turn === 2 && this.handLandmarker) {
+      const h = this.handLandmarker.detectForVideo(this.video, performance.now())
+      const found = { L: null, R: null }
+      ;(h.landmarks ?? []).forEach((img, i) => {
+        const side = whichHand(img[0], this.wristsImg, h.handedness?.[i]?.[0]?.categoryName)
+        if (side && !found[side]) found[side] = handPoints(h.worldLandmarks[i])
+      })
+      this.hands = found
       return
     }
     const r = this.landmarker.detectForVideo(this.video, performance.now())
@@ -135,4 +170,32 @@ export function armDirection(shoulder, wrist) {
   const x = wrist.x - shoulder.x, y = -(wrist.y - shoulder.y), z = -(wrist.z - shoulder.z)
   const n = Math.hypot(x, y, z) || 1
   return [x / n, y / n, z / n]
+}
+
+/**
+ * Which of the person's hands a detection is: the one whose wrist the pose
+ * saw nearest, else MediaPipe's handedness label. Older MediaPipe docs say
+ * the label assumes a mirrored (selfie) image; tasks-vision 1.2 on our
+ * unmirrored video labels the person's own hands (checked on stills of
+ * raised hands, a peace sign and fists: the right hand reads "Right").
+ */
+export function whichHand(wrist, poseWrists, label) {
+  const d = (p) => (p ? Math.hypot(p.x - wrist.x, p.y - wrist.y) : Infinity)
+  const dl = d(poseWrists.L), dr = d(poseWrists.R)
+  if (Math.min(dl, dr) < 0.25) return dl < dr ? 'L' : 'R'
+  if (label === 'Left') return 'L'
+  if (label === 'Right') return 'R'
+  return null
+}
+
+/** A hand's world landmarks, relative to its wrist, in avatar space. */
+export function handPoints(world) {
+  const out = new Array(63)
+  const w = world[0]
+  world.forEach((p, i) => {
+    out[i * 3] = p.x - w.x
+    out[i * 3 + 1] = -(p.y - w.y)
+    out[i * 3 + 2] = -(p.z - w.z)
+  })
+  return out
 }

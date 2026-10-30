@@ -152,8 +152,17 @@ let riding = false
 // --- Others ---
 const presence = new Presence(new BroadcastTransport(), { id: me.id })
 const others = new Map()
+// Social rez: you see others at the rez they share with you. Sharing
+// (on by default) reaches people within SHARE_RADIUS; anyone not sharing,
+// or too far away, is a guest to you, whatever they've earned.
+const SHARE_RADIUS = 12
+let sharing = true
+try { sharing = localStorage.getItem('exo.cafe/share-rez') !== 'off' } catch { /* default on */ }
+function tierFor(s, pos) {
+  return s.shares && pos.distanceTo(new THREE.Vector3(...s.p)) <= SHARE_RADIUS ? s.tier : 0
+}
 presence.on('join', (m) => {
-  const a = new Avatar({ hue: m.hue, name: m.name, tier: m.tier })
+  const a = new Avatar({ hue: m.hue, name: m.name, tier: 0 })
   others.set(m.id, a)
   scenes[m.scene === 'abode' ? 1 : 0].add(a.group)
   a.group.position.fromArray(m.p)
@@ -224,6 +233,16 @@ function give(id) {
   if (id === 'max') maxSays(pick(MAX.donate))
   mistPanel.render()
 }
+
+$('share').setAttribute('aria-pressed', String(sharing))
+$('share').addEventListener('click', () => {
+  sharing = !sharing
+  $('share').setAttribute('aria-pressed', String(sharing))
+  try { localStorage.setItem('exo.cafe/share-rez', sharing ? 'on' : 'off') } catch { /* fine */ }
+  note(sharing
+    ? `People within ${SHARE_RADIUS} m see you at your rez.`
+    : 'Nobody sees your rez now: to everyone else you\'re a guest in voxels.')
+})
 
 $('mirror').addEventListener('click', async () => {
   const btn = $('mirror')
@@ -323,7 +342,7 @@ controls.onClick = (e) => {
 }
 
 // A handle for tests and the console: ?debug
-if (params.has('debug')) window.exo = { mist, vcpu, worker, car, life, show, mind, face, give, avatar, controls, bar, floor, abode, portal, camera, renderer, ledger, presence, chipFrame, cafe, get side() { return side }, get tick() { return tick } }
+if (params.has('debug')) window.exo = { others, mist, vcpu, worker, car, life, show, mind, face, give, avatar, controls, bar, floor, abode, portal, camera, renderer, ledger, presence, chipFrame, cafe, get side() { return side }, get tick() { return tick } }
 
 // --- Loop ---
 const clock = new THREE.Clock()
@@ -408,9 +427,12 @@ function frame() {
     avatar.headAim.set(face.head.pitch, face.head.yaw, face.head.roll)
     avatar.armAim.L = face.arms.L
     avatar.armAim.R = face.arms.R
+    avatar.handAim.L = face.hands.L
+    avatar.handAim.R = face.hands.R
   } else {
     avatar.headAim.set(0, 0, 0)
     avatar.armAim.L = avatar.armAim.R = null
+    avatar.handAim.L = avatar.handAim.R = null
   }
   if (avatar.tier !== ledger.tier) {
     avatar.setTier(ledger.tier)
@@ -454,13 +476,18 @@ function frame() {
       a.headAim.set(...s.head)
       a.armAim.L = s.arms?.[0] ?? null
       a.armAim.R = s.arms?.[1] ?? null
-      if (a.tier !== s.tier) a.setTier(s.tier)
+      a.handAim.L = s.hands?.[0]?.map((v) => v / 500) ?? null
+      a.handAim.R = s.hands?.[1]?.map((v) => v / 500) ?? null
+      const t = tierFor(s, avatar.group.position)
+      if (a.tier !== t) a.setTier(t)
     }
     if (entered) {
       presence.publish({
-        name: me.name, hue: me.hue, tier: avatar.tier, scene: side ? 'abode' : 'world',
+        name: me.name, hue: me.hue, tier: avatar.tier, shares: sharing, scene: side ? 'abode' : 'world',
         p: pos.toArray(), yaw: heading, head: avatar.headAim.toArray().slice(0, 3),
         arms: [avatar.armAim.L, avatar.armAim.R],
+        // Hands in 2 mm steps: 63 small integers each.
+        hands: [avatar.handAim.L, avatar.handAim.R].map((h) => h && h.map((v) => Math.round(v * 500))),
       })
     }
   }
@@ -500,7 +527,12 @@ function hud() {
   $('tier').textContent = TIERS[avatar.tier].name
   $('rez').style.width = `${Math.round(ledger.progress * 100)}%`
   const al = allocation(avatar.tier)
-  $('alloc').textContent = al.smooth ? 'Smooth body · full rez' : `Region ${al.label} · ${al.voxels} voxels · ${(ledger.credit / 1000).toFixed(1)}k cycles given`
+  let near = 0
+  for (const [, peer] of presence.peers) if (peer.state.scene === (side ? 'abode' : 'world') && avatar.group.position.distanceTo(new THREE.Vector3(...peer.state.p)) <= SHARE_RADIUS) near++
+  const shared = sharing ? `shared with ${near} nearby` : 'not shared'
+  $('alloc').textContent = al.smooth
+    ? `Smooth body · full rez · ${shared}`
+    : `Region ${al.label} · ${al.voxels} voxels · ${(ledger.credit / 2000).toFixed(1)}k cycles given · ${shared}`
 }
 
 // --- Helpers ---
