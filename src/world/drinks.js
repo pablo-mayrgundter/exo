@@ -19,6 +19,8 @@ export const DRINKS = [
 ]
 /** Donated half-cycles a drink holds: about two minutes at a quarter of a core. */
 export const DRINK_CYCLES = 200000
+/** Sips to a glass: each one drinks this share of it, and puts its cycles on the tab. */
+export const GULPS = 6
 const POURS_PER_BOTTLE = 4
 const KEY = 'exo.cafe/bar'
 
@@ -58,7 +60,7 @@ export class BarState {
     this.bar = bar
     this.glasses = {} // seat index → { drink, consumed, by, poured }
     this.pours = bar.bottleInfo.map(() => POURS_PER_BOTTLE) // per bottle
-    this.tab = { drinks: 0, cycles: 0 }
+    this.tab = { drinks: 0, cycles: 0, owed: 0 } // cycles paid; half-cycles drunk and not yet paid
     this.max = { regulars: {} } // name → { visits, last, lastDrink, memory: [] }
     try {
       const s = JSON.parse(localStorage.getItem(KEY))
@@ -68,6 +70,7 @@ export class BarState {
         this.tab = s.tab ?? this.tab
         this.max = s.max ?? this.max
       }
+      this.tab.owed ??= 0
     } catch { /* storage may be blocked */ }
     this.syncShelf()
   }
@@ -120,14 +123,26 @@ export class BarState {
     return g ? Math.max(0, 1 - g.consumed / DRINK_CYCLES) : 0
   }
 
-  /** Spends donated half-cycles on a seat's drink. Returns true when it empties. */
-  drink(seat, halfCycles) {
+  /**
+   * A sip: drinks a sixth of the glass and puts what it drank on the tab,
+   * to be paid in donated cycles. Returns true when it empties the glass.
+   */
+  gulp(seat) {
     const g = this.glasses[seat]
     if (!g || g.consumed >= DRINK_CYCLES) return false
     const before = g.consumed
-    g.consumed = Math.min(DRINK_CYCLES, g.consumed + halfCycles)
-    this.tab.cycles += (g.consumed - before) / 2 // what was drunk, not what was offered
+    g.consumed = Math.min(DRINK_CYCLES, g.consumed + DRINK_CYCLES / GULPS)
+    this.tab.owed += g.consumed - before
+    this.save()
     return g.consumed >= DRINK_CYCLES
+  }
+
+  /** Pays the tab with donated half-cycles. Returns how many it took (no more than owed). */
+  pay(halfCycles) {
+    const p = Math.max(0, Math.min(this.tab.owed, halfCycles))
+    this.tab.owed -= p
+    this.tab.cycles += p / 2 // half-cycles in, cycles on the tab
+    return p
   }
 
   clear(seat) {

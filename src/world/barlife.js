@@ -3,12 +3,14 @@
 // sits where and what's in front of them.
 //
 // A drink is a donation to Max's mind (the 'max' job on the vCPU), paid a
-// sip at a time: click your glass and for the length of the sip your budget
-// goes to that job, and the glass drops by the cycles it donated. Nothing
-// is drunk, or donated, unless you drink. While you're seated with a drink
+// sip at a time: click your glass and you raise it and drink a sixth of it,
+// and what you drank goes on your tab, which your budget pays to that job
+// until it's settled. Nothing is drunk, or donated, unless you drink. While you're seated with a drink
 // he stays for longer spells of conversation; with an empty glass he offers
 // another, and drifts back to his chores.
+import * as THREE from 'three'
 import { BarState, DRINKS, drinkById, drinkIn, makeGlass, DRINK_CYCLES } from './drinks.js'
+import { SIP } from '../avatar/avatar.js'
 import { Bartender } from '../npc/bartender.js'
 
 /**
@@ -20,10 +22,11 @@ export function makeBarLife({ bar, avatar, mist, me, say, note, respond }) {
   const glasses = {} // seat → { glass, drink }
   let remote = {} // seat → { drink, level, who }: other visitors' open drinks, from presence
   let seat = null
-  let lastGiven = mist.get('max').given
+  let lastGiven = null // Max's donated half-cycles at the last tick seen
   let saveAt = 0, offered = false, greeted = false
-  let sipUntil = 0 // while a sip lasts, your budget is donated to Max's mind
-  const SIP_SECONDS = 4
+  let sip = null // { start, seat, gulped }: a sip under way
+  let paying = false // while the tab is owed, your budget goes to Max's mind
+  const shown = {} // seat → the level drawn, easing toward the real one
   const bartender = new Bartender({
     avatar: bar.max, bar, state, say,
     onPoured: (s, drink) => {
@@ -40,8 +43,29 @@ export function makeBarLife({ bar, avatar, mist, me, say, note, respond }) {
     glass.group.position.copy(bar.glassAt(bar.seats[s]))
     bar.group.add(glass.group)
     glasses[s] = { glass, drink }
-    glass.setLevel(state.level(s))
+    shown[s] = state.level(s)
+    glass.setLevel(shown[s])
   }
+
+  // Where the glass is while you sip: from the counter into your hand, up
+  // to your mouth, tipped, and back down.
+  const HAND = new THREE.Vector3(), Q = new THREE.Quaternion(), QA = new THREE.Quaternion(), TIP = new THREE.Quaternion()
+  const X = new THREE.Vector3(1, 0, 0), GRIP = new THREE.Vector3(0, -0.07, 0.03)
+  function holdGlass(s, time) {
+    const g = glasses[s]?.glass.group
+    if (!g) return
+    const home = bar.glassAt(bar.seats[s])
+    const hold = sip && sip.seat === s && avatar.seated ? avatar.sipHold(time) : null
+    if (!hold || hold.attach <= 0) { g.position.copy(home); g.quaternion.identity(); return }
+    // The glass's middle in the hand: its base a little below the wrist.
+    bar.group.worldToLocal(avatar.hand('R', HAND, GRIP))
+    g.position.lerpVectors(home, HAND, hold.attach)
+    // Tipped toward the mouth, in the avatar's frame, then into the bar's.
+    avatar.group.getWorldQuaternion(QA)
+    bar.group.getWorldQuaternion(Q).invert().multiply(QA).multiply(TIP.setFromAxisAngle(X, -hold.tilt))
+    g.quaternion.identity().slerp(Q, hold.attach)
+  }
+
 
   function mine(s) { return state.glasses[s]?.by === me.name && state.level(s) > 0 }
 
@@ -51,10 +75,16 @@ export function makeBarLife({ bar, avatar, mist, me, say, note, respond }) {
     return null
   }
 
-  function endSip() {
-    if (!sipUntil) return
-    sipUntil = 0
-    mist.take('max')
+  /** Pays the tab from Max's donated cycles, giving to his mind while anything is owed. */
+  function settle() {
+    const j = mist.get('max')
+    if (!j.tick) return // no tick from the worker yet
+    if (lastGiven === null) lastGiven = j.given
+    const delta = j.given - lastGiven
+    lastGiven = j.given
+    if (paying && delta > 0) state.pay(delta)
+    if (state.tab.owed > 0 && !paying) { mist.give('max'); paying = true }
+    if (state.tab.owed <= 0 && paying) { mist.take('max'); paying = false; state.save() }
   }
 
   return {
@@ -93,7 +123,7 @@ export function makeBarLife({ bar, avatar, mist, me, say, note, respond }) {
     },
 
     stand() {
-      endSip()
+      if (sip) { const s = sip.seat; sip = null; holdGlass(s, 0) } // put it down
       seat = null
       avatar.stand()
     },
@@ -146,42 +176,51 @@ export function makeBarLife({ bar, avatar, mist, me, say, note, respond }) {
       const customers = others.map((o) => ({ seat: o.seat, name: o.name, drinking: state.level(o.seat) > 0 }))
       if (seat !== null) customers.push({ seat, name: me.name, drinking: state.level(seat) > 0 })
       bartender.update(dt, time, customers)
-      // A sip drinks the cycles it donated to Max's mind, and no others.
-      const given = mist.get('max').given
-      const delta = given - lastGiven
-      lastGiven = given
-      if (sipUntil && seat !== null && delta > 0 && mine(seat)) {
-        if (state.drink(seat, delta)) {
-          endSip()
-          if (!offered) { offered = true; say(`That's the bottom of the glass. Another ${drinkById(state.glasses[seat].drink).name}?`) }
+      settle()
+      // A sip: the gulp when the glass reaches your mouth, and the glass back
+      // on the counter at the end.
+      if (sip) {
+        const t = time - sip.start
+        if (!sip.gulped && t > SIP.drink) {
+          sip.gulped = true
+          if (state.gulp(sip.seat) && !offered) {
+            offered = true
+            say(`That's the bottom of the glass. Another ${drinkById(state.glasses[sip.seat].drink).name}?`)
+          }
         }
+        if (t > SIP.end || sip.seat !== seat) { const s = sip.seat; sip = null; holdGlass(s, time) }
+        else holdGlass(sip.seat, time)
       }
-      if (sipUntil && time > sipUntil) endSip()
-      for (const [s, g] of Object.entries(glasses)) if (!g.remote) g.glass.setLevel(state.level(Number(s)))
+      // Levels drain as you drink, rather than jump.
+      const e = 1 - Math.exp(-dt * 2.5)
+      for (const [s, g] of Object.entries(glasses)) {
+        if (g.remote) continue
+        shown[s] += (state.level(Number(s)) - shown[s]) * e
+        g.glass.setLevel(shown[s])
+      }
       if (time > saveAt) { saveAt = time + 5; state.save() }
     },
 
     /**
-     * A sip, from a click on your glass: the avatar raises it, and for a
-     * few seconds your budget is donated to Max's mind and drunk from the
-     * glass. Returns false if there's nothing of yours to drink.
+     * A sip, from a click on your glass: the avatar raises it and drinks a
+     * sixth of it, and what it drank goes on the tab, paid from your budget
+     * to Max's mind. Returns false if there's nothing of yours to drink.
      */
     sip(time) {
-      if (seat === null || !mine(seat) || sipUntil) return false
+      if (seat === null || !mine(seat) || sip) return false
       if (mist.budget === 0) {
         mist.setBudget(0.25)
-        note('A drink here is paid in compute: each sip donates from your budget, now 25% of a core (change it in vCPU).')
+        note('A drink here is paid in compute: each sip goes on your tab, paid from your budget, now 25% of a core (change it in vCPU).')
       }
-      mist.give('max')
-      sipUntil = time + SIP_SECONDS
-      if (avatar.seated) avatar.seated.sipUntil = time + 2.2
+      sip = { start: time, seat, gulped: false }
+      if (avatar.seated) avatar.seated.sip = { start: time, glass: glasses[seat].glass.group.getWorldPosition(new THREE.Vector3()) }
       return true
     },
 
     /** The glass in front of a stool, for clicking. */
     glassAt(s) { return glasses[s]?.glass.group ?? null },
 
-    get sipping() { return sipUntil > 0 },
+    get sipping() { return !!sip },
 
     /** Your open drink, for presence: { seat, drink, level }, or null. */
     openDrink() {
@@ -212,7 +251,7 @@ export function makeBarLife({ bar, avatar, mist, me, say, note, respond }) {
       return { up: mineHere || !!r || !!occupiedBy, mine: mineHere, who: r?.who ?? occupiedBy, glass }
     },
 
-    /** The tab: drinks and the cycles they were paid with. */
+    /** The tab: drinks, the cycles paid for them, and the half-cycles still owed. */
     get tab() { return state.tab },
     level(s) { return state.level(s) },
     DRINK_CYCLES,

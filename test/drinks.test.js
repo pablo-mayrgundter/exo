@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BarState, DRINKS, DRINK_CYCLES, drinkIn } from '../src/world/drinks.js'
+import { BarState, DRINKS, DRINK_CYCLES, GULPS, drinkIn } from '../src/world/drinks.js'
 
 /** A bar with a shelf of bottles, without the 3D. */
 function fakeBar() {
@@ -29,14 +29,20 @@ describe('drinks', () => {
     expect(s.tab.drinks).toBe(4)
   })
 
-  it('empties a drink with donated cycles, and runs the tab', () => {
+  it('drinks a sixth a sip, and pays the tab with donated cycles', () => {
     const s = new BarState(fakeBar())
     s.pour(0, 3, DRINKS[0], 'pmy')
     expect(s.level(3)).toBe(1)
-    expect(s.drink(3, DRINK_CYCLES / 2)).toBe(false)
-    expect(s.level(3)).toBeCloseTo(0.5, 9)
-    expect(s.drink(3, DRINK_CYCLES)).toBe(true) // the last of it
+    expect(s.gulp(3)).toBe(false)
+    expect(s.level(3)).toBeCloseTo(1 - 1 / GULPS, 9)
+    expect(s.tab.owed).toBeCloseTo(DRINK_CYCLES / GULPS, 6)
+    for (let i = 1; i < GULPS - 1; i++) expect(s.gulp(3)).toBe(false)
+    expect(s.gulp(3)).toBe(true) // the last of it
     expect(s.level(3)).toBe(0)
-    expect(s.tab.cycles).toBe(DRINK_CYCLES / 2) // half-cycles in, cycles on the tab
+    expect(s.gulp(3)).toBe(false) // nothing left to drink
+    expect(s.pay(DRINK_CYCLES / 2)).toBeCloseTo(DRINK_CYCLES / 2, 6)
+    expect(s.pay(DRINK_CYCLES)).toBeCloseTo(DRINK_CYCLES / 2, 6) // no more than is owed
+    expect(s.tab.owed).toBeCloseTo(0, 6)
+    expect(s.tab.cycles).toBeCloseTo(DRINK_CYCLES / 2, 6) // half-cycles in, cycles on the tab
   })
 })

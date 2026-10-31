@@ -475,7 +475,7 @@ controls.onClick = (e) => {
 }
 
 // A handle for tests and the console: ?debug
-if (params.has('debug')) window.exo = { terminals, setView, barLife, sitDown, standUp, others, mist, vcpu, worker, car, life, show, mind, face, give, avatar, controls, bar, floor, abode, portal, camera, renderer, ledger, presence, chipFrame, cafe, get side() { return side }, get tick() { return tick } }
+if (params.has('debug')) window.exo = { get clock() { return clock }, terminals, setView, barLife, sitDown, standUp, others, mist, vcpu, worker, car, life, show, mind, face, give, avatar, controls, bar, floor, abode, portal, camera, renderer, ledger, presence, chipFrame, cafe, get side() { return side }, get tick() { return tick } }
 if (window.exo) window.exo.jukebox = jukebox
 
 // --- Loop ---
@@ -531,9 +531,17 @@ function frame() {
   if (!seatedNow) collide(pos, side === 0 ? bar.colliders : abode.colliders)
   car.update(dt)
   if (seatedNow) {
-    // Looking around from the stool: the head turns, the body follows a little.
-    avatar.look.yaw = THREE.MathUtils.clamp(wrapAngle(controls.yaw - (heading - Math.PI)), -1.3, 1.3)
-    avatar.look.pitch = THREE.MathUtils.clamp(controls.pitch - 0.08, -0.5, 0.9)
+    // Looking around from the stool: the head turns, the body follows a
+    // little. The look follows the camera's: in first person it is the
+    // camera; in third person, the camera's view, except when you come
+    // round to the front (within 45°), where the avatar looks straight
+    // ahead so you can see its face. A tracked neck adds its turn on top
+    // (avatar.headTrack).
+    const first = view.seated === 'first'
+    const rel = wrapAngle(controls.yaw - (heading - Math.PI)) // 0: the camera behind, ±π: in front
+    const w = first ? 1 : 1 - THREE.MathUtils.smoothstep(Math.abs(rel), Math.PI * 0.75 - 0.4, Math.PI * 0.75)
+    avatar.look.yaw = THREE.MathUtils.clamp(rel, -1.3, 1.3) * w
+    avatar.look.pitch = THREE.MathUtils.clamp(controls.pitch - (first ? 0.08 : 0.2), -0.5, 0.9) * w
   }
   const sitting = seatedOthers()
   barLife.update(dt, now, sitting)
@@ -573,12 +581,14 @@ function frame() {
     face.poll()
     avatar.face = face.landmarks
     avatar.headAim.set(face.head.pitch, face.head.yaw, face.head.roll)
+    avatar.headTrack = face.head
     avatar.armAim.L = face.arms.L
     avatar.armAim.R = face.arms.R
     avatar.handAim.L = face.hands.L
     avatar.handAim.R = face.hands.R
   } else {
     avatar.headAim.set(0, 0, 0)
+    avatar.headTrack = null
     avatar.armAim.L = avatar.armAim.R = null
     avatar.handAim.L = avatar.handAim.R = null
   }
@@ -662,6 +672,9 @@ function frame() {
   const fpv = view[viewKey()] === 'first' && !riding
   if (fpv && !seatedNow && entered) heading = controls.yaw + Math.PI // walking in first person: face where you look
   avatar.parts.head.pivot.visible = !fpv
+  // Your own arm, a hand's breadth from your eyes while you drink, would fill
+  // the view: in first person the glass comes up on its own.
+  avatar.parts.armR.pivot.visible = !(fpv && avatar.sipHold(now).attach > 0.2)
   if (avatar.label) avatar.label.visible = !fpv
   if (fpv) {
     avatar.group.updateMatrixWorld(true)

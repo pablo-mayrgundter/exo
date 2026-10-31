@@ -42,11 +42,12 @@ by the community that gathers at [exo.cafe](https://exo.cafe).
 - **Pull up a stool.** E sits you at the bar, in first person (or third:
   the View toggle, V, or scroll): look around and your head, torso and
   hips follow; your elbows prop you on the counter on the side away from
-  where you look. A POS terminal rises out of the counter with the menu
+  where you look. In third person, come round to the front and your avatar
+  looks ahead, so you can see its face. A POS terminal rises out of the counter with the menu
   and your tab; order, and Max fetches the bottle, pours, and sets it in
-  front of you. Click the glass to drink: each sip donates a few seconds
-  of your compute to his mind, and the glass drops by what it gave. Leave
-  it unfinished and your terminal and your stool wait for you.
+  front of you. Click the glass to drink: you raise it and drink a sixth
+  of it, and the sip goes on your tab, which your compute pays to his
+  mind. Leave it unfinished and your terminal and your stool wait for you.
 - **Max Pablo tends bar.** He shuffles between the taps, the sink, the
   shelf and the till, splits his time between chores and customers,
   thinks his aphorisms aloud, and in conversation he's

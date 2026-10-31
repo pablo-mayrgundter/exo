@@ -121,7 +121,9 @@ function paint(t, s, account, drinks) {
   }
   if (s.mine) {
     g.fillStyle = '#e8f6ff'
-    g.fillText(`TAB    ${account.tab.drinks} drink${account.tab.drinks === 1 ? '' : 's'} · ${Math.round(account.tab.cycles / 1000)}k cycles`, 18, y)
+    // Cycles paid, and what's drunk and not yet paid (half-cycles owed).
+    const owed = account.tab.owed > 1 ? ` · ${Math.ceil(account.tab.owed / 2000)}k owed` : ' cycles'
+    g.fillText(`TAB    ${account.tab.drinks} drink${account.tab.drinks === 1 ? '' : 's'} · ${Math.round(account.tab.cycles / 1000)}k paid${owed}`, 18, y)
     y += 26
     g.fillStyle = '#8fa6d6'
     g.font = `15px ${FONT_MONO}`

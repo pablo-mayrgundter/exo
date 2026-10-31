@@ -90,6 +90,7 @@ real computer, a bartender, and other people.*
 - **S1.7.1** As a visitor, I can sit at the bar. ✅
   - [x] E on a stool, E to stand; first person while seated (zoom out for third)
   - [x] Looking turns the head, with the torso (20%) and hips (10%) following
+  - [x] In third person the look follows the camera's view, except within 45° of the front, where the avatar looks ahead so you can see its face; a tracked neck (*Mirror my face*) turns the head on top of either
   - [x] Arms prop you on the counter: looking right, on the left elbow; left, the right; ahead, one, the other or both, shifting; weight shifts on its own now and then
   - [x] Others see you seated, and where you look
   - [x] First or third person, a toggle in the status panel (V, or scroll), remembered for sitting and walking separately
@@ -102,7 +103,9 @@ real computer, a bartender, and other people.*
   - [x] Max fetches a bottle of the drink's colour from the back bar, carries it, pours, and puts it back; bottles hold four pours, and he restocks empties at the shelf
   - [x] Orders interrupt his chores and conversation
 - **S1.7.3** As a visitor, my drink is a donation. ✅
-  - [x] A drink is drunk a sip at a time, by clicking your glass: for the sip (4 s) your budget is donated to Max's mind and the glass drops by what it donated (a drink holds ≈200k half-cycles); untouched, nothing is drunk or donated
+  - [x] A drink is drunk a sip at a time, by clicking your glass: you reach for it, raise it, tip it and drink a sixth of it (a drink holds ≈200k half-cycles); what you drank goes on your tab, and your budget goes to Max's mind until the tab is paid (about 20 s a sip at a quarter of a core); untouched, nothing is drunk or donated
+  - [ ] Others see you raise your glass (send the sip with presence)
+  - [ ] An elbow for the arms, so a glass reaches the mouth (and mocap arms bend)
   - [x] Your tab counts drinks and cycles; an empty glass gets "another?", and shorter conversations
   - [ ] Drinks for others: buy a round (a donation in their name)
 - **S1.7.4** As a regular, the bar remembers. ✅ (in this browser)

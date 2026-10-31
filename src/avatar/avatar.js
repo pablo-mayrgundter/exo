@@ -40,6 +40,13 @@ export const PARTS = {
 // Each arm's end (the wrist) in its pivot's space, and its rest direction.
 const ARM_END = { L: new THREE.Vector3(0.05, -0.55, 0), R: new THREE.Vector3(-0.05, -0.55, 0) }
 const REST = { L: ARM_END.L.clone().normalize(), R: ARM_END.R.clone().normalize() }
+// A sip, in seconds from the click: reach for the glass, lift it, drink
+// (the gulp), lower it, set it down, and back to how you were sitting.
+export const SIP = { reach: 0.5, lift: 1.1, drink: 1.3, lower: 2.5, set: 3.1, end: 3.5 }
+const SHOULDER_R = new THREE.Vector3(...PARTS.armR.pivot)
+const TO_MOUTH = new THREE.Vector3(0.29, 0.3, 0.91).normalize() // right arm: the hand at the chin, clear of the eyes
+const SIP_V = new THREE.Vector3(), SIP_W = new THREE.Vector3()
+const ramp = (t, a, b) => THREE.MathUtils.smoothstep(t, a, b)
 // MediaPipe's hand skeleton: 21 landmarks, these bones between them.
 const HAND_BONES = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11],
   [11, 12], [9, 13], [13, 14], [14, 15], [15, 16], [13, 17], [0, 17], [17, 18], [18, 19], [19, 20]]
@@ -158,6 +165,8 @@ export class Avatar {
     this.lean = 0
     /** Where a seated avatar looks, relative to its seat: yaw (+ = its left), pitch (+ = down). */
     this.look = { yaw: 0, pitch: 0 }
+    /** The tracked head ({yaw, pitch, roll}, from the camera), or null; seated, it adds to the look. */
+    this.headTrack = null
     /** Set by sit(): the seated controller's state. */
     this.seated = null
     /** Face landmarks (normalized, mirrored) to draw on the visor, or null. */
@@ -293,14 +302,14 @@ export class Avatar {
 
   /**
    * Sits on a seat: legs down to the footrest, and a seated controller for
-   * the rest. Setting `seated.sipUntil` (a click on the glass) raises the
-   * drink to the mouth until then.
+   * the rest. Setting `seated.sip` to `{start, glass}` (a click on the
+   * glass, at its world position) reaches for it and raises it to the mouth.
    */
   sit() {
     this.seated = {
       support: 'both', mode: 'both', nextMode: 0,
       shift: { lean: 0.12, x: 0, tilt: 0 }, want: { lean: 0.12, x: 0, tilt: 0 }, nextShift: 0,
-      sipUntil: 0, lean: 0.12, x: 0, tilt: 0,
+      sip: null, lean: 0.12, x: 0, tilt: 0,
     }
   }
 
@@ -319,7 +328,10 @@ export class Avatar {
   updateSeated(dt, time) {
     const st = this.seated
     const { legL, legR, torso } = this.parts
-    const yaw = THREE.MathUtils.clamp(this.look.yaw, -1.3, 1.3)
+    // The look, and the tracked neck on top: the body follows a little of
+    // the neck's turn, the head all of it.
+    const tr = this.headTrack
+    const yaw = THREE.MathUtils.clamp(this.look.yaw + (tr ? tr.yaw * 0.3 : 0), -1.3, 1.3)
     legL.pivot.rotation.set(-0.62, 0, 0.14)
     legR.pivot.rotation.set(-0.62, 0, -0.14)
     // Which arm takes the weight.
@@ -343,16 +355,58 @@ export class Avatar {
     this.body.rotation.set(0, yaw * 0.1, st.tilt)
     this.body.position.x = st.x
     torso.pivot.rotation.set(st.lean + (st.support === 'both' ? 0.08 : 0), yaw * 0.2, 0)
-    this.headAim.set(this.look.pitch, yaw * 0.7, -st.tilt * 0.5)
+    const hold = this.sipHold(time)
+    const headYaw = THREE.MathUtils.clamp(yaw * 0.7 + (tr ? tr.yaw * 0.7 : 0), -1.4, 1.4)
+    // Drinking tips the head back a little.
+    this.headAim.set(this.look.pitch + (tr?.pitch ?? 0) - hold.tilt * 0.3, headYaw, -st.tilt * 0.5 + (tr?.roll ?? 0))
     // Arms: on the counter, or resting; the right hand brings the drink up.
     const onCounter = { L: [0.1, -0.3, 0.95], R: [-0.1, -0.3, 0.95] }
     const resting = { L: [0.06, -0.85, 0.5], R: [-0.06, -0.85, 0.5] }
-    const sipping = time < st.sipUntil
     for (const side of ['L', 'R']) {
       const props = st.support === 'both' || st.support === side
       this.armPose[side] = props ? onCounter[side] : resting[side]
     }
-    if (sipping) this.armPose.R = [0.6, 0.66, 0.42]
+    if (st.sip) {
+      const t = time - st.sip.start
+      if (t > SIP.end) st.sip = null
+      else this.armPose.R = this.sipArm(t)
+    }
+  }
+
+  /** The right arm's direction at `t` seconds into a sip. */
+  sipArm(t) {
+    const st = this.seated
+    // Toward the glass's middle on the counter, from the shoulder.
+    const reach = this.body.worldToLocal(SIP_V.copy(st.sip.glass)).add(SIP_W.set(0, 0.08, 0)).sub(SHOULDER_R).normalize()
+    const sit = SIP_W.fromArray(this.armPose.R)
+    const out = new THREE.Vector3()
+    if (t < SIP.reach) out.lerpVectors(sit, reach, ramp(t, 0, SIP.reach))
+    else if (t < SIP.lift) out.lerpVectors(reach, TO_MOUTH, ramp(t, SIP.reach, SIP.lift))
+    else if (t < SIP.lower) out.copy(TO_MOUTH)
+    else if (t < SIP.set) out.lerpVectors(TO_MOUTH, reach, ramp(t, SIP.lower, SIP.set))
+    else out.lerpVectors(reach, sit, ramp(t, SIP.set, SIP.end))
+    return out.normalize().toArray()
+  }
+
+  /**
+   * How a sip holds the glass at `time`: `attach` 0 (on the counter) to 1
+   * (in the hand), and `tilt`, how far it's tipped toward the mouth (radians).
+   */
+  sipHold(time) {
+    const sip = this.seated?.sip
+    if (!sip) return { attach: 0, tilt: 0 }
+    const t = time - sip.start
+    const attach = t < SIP.lift ? ramp(t, SIP.reach - 0.1, SIP.reach + 0.15) : 1 - ramp(t, SIP.set - 0.15, SIP.set + 0.1)
+    const tilt = 1.0 * (ramp(t, SIP.lift - 0.1, SIP.drink) - ramp(t, SIP.lower - 0.4, SIP.lower))
+    return { attach, tilt }
+  }
+
+  /** The wrist of an arm in world space, plus an offset in the body's frame. */
+  hand(side, out = new THREE.Vector3(), offset = null) {
+    const arm = this.parts[side === 'L' ? 'armL' : 'armR'].pivot
+    out.copy(ARM_END[side]).applyQuaternion(arm.quaternion).add(arm.position)
+    if (offset) out.add(offset)
+    return this.body.localToWorld(out)
   }
 
   /** Places a hand's skeleton at its arm's wrist, from tracked points. */
