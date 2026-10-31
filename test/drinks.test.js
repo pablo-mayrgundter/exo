@@ -45,4 +45,16 @@ describe('drinks', () => {
     expect(s.tab.owed).toBeCloseTo(0, 6)
     expect(s.tab.cycles).toBeCloseTo(DRINK_CYCLES / 2, 6) // half-cycles in, cycles on the tab
   })
+
+  it('lists empties once they have stood a while', () => {
+    const s = new BarState(fakeBar())
+    s.pour(0, 2, DRINKS[0], 'pmy')
+    s.pour(0, 5, DRINKS[0], 'pmy')
+    for (let i = 0; i < GULPS; i++) s.gulp(2)
+    const t = s.glasses[2].emptied
+    expect(s.empties(8000, t + 1000)).toEqual([])
+    expect(s.empties(8000, t + 9000)).toEqual([2]) // not 5: still full
+    s.clear(2)
+    expect(s.empties(0)).toEqual([])
+  })
 })

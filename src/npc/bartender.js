@@ -5,8 +5,13 @@
 //     till, the shelf) and leaning in to it for a while.
 //   - With customers he splits his time: a spell of talking with one (longer
 //     if they have a drink in front of them), then a chore, then another.
-//   - An order beats everything: he walks to a bottle of the right colour,
-//     takes it down, carries it to the customer, pours, and puts it back.
+//   - An order beats everything. He goes to the rez pad on the counter and
+//     waits while a glass rezzes in (taking any empty from that stool first
+//     and de-rezzing it there), then fetches a bottle of the right colour,
+//     carries both to the customer, sets the glass down, pours, and puts
+//     the bottle back.
+//   - A glass left empty for a while he clears: he takes it from the
+//     counter to the pad, where it de-rezzes.
 //
 // Positions are in bar space (body units, the bar's floor centre at the
 // origin; the lane is behind the counter at z ≈ -5.3, facing +z).
@@ -15,14 +20,17 @@ import { drinkById } from '../world/drinks.js'
 
 const WALK = 0.9 // body units per second: a shuffle
 const TALK_Z = -4.8 // close enough to lean on the counter
+const CLEAR_AFTER = 8000 // ms an empty glass stands before he clears it
+const HAND_GLASS = new THREE.Vector3(0.03, -0.09, 0.05) // a carried glass's base, from his left wrist
 const rnd = (a, b) => a + Math.random() * (b - a)
 
 export class Bartender {
   /**
    * @param {{avatar: import('../avatar/avatar.js').Avatar, bar: object, state: import('../world/drinks.js').BarState,
-   *   say: (text: string) => void, onPoured?: (seat: number, drink: object) => void}} o
+   *   say: (text: string) => void, onPoured?: (seat: number, drink: object, glass: object) => void,
+   *   glassware: {pad: object, make: (drink: object) => object, take: (seat: number) => object | null, place: (seat: number, glass: object) => void}}} o
    */
-  constructor({ avatar, bar, state, say, onPoured }) {
+  constructor({ avatar, bar, state, say, onPoured, glassware }) {
     this.avatar = avatar
     this.bar = bar
     this.state = state
@@ -34,6 +42,8 @@ export class Bartender {
     this.talking = null // { seat, until }
     this.heading = 0
     this.carry = null // the bottle mesh in his hand
+    this.glassware = glassware
+    this.held = null // a glass in his left hand
     this.speed = 0
   }
 
@@ -46,7 +56,7 @@ export class Bartender {
 
   /** Someone at a seat said something: come over, unless busy pouring. */
   heard(seat, time) {
-    if (this.task && ['fetch', 'carry', 'pour', 'return'].includes(this.task.phase)) return
+    if (this.task && (this.task.kind === 'serve' || this.task.kind === 'clear')) return
     if (this.talking?.seat === seat) { this.talking.until = Math.max(this.talking.until, time + 20); return }
     this.startTalk(seat, time, 20)
   }
@@ -64,8 +74,9 @@ export class Bartender {
    */
   update(dt, time, customers) {
     this.customers = customers
-    // An order interrupts talk and chores (not another order being poured).
-    if (this.orders.length && this.task && this.task.kind !== 'serve') {
+    // An order interrupts talk and chores (not another order being poured,
+    // or a glass on its way to the pad).
+    if (this.orders.length && this.task && this.task.kind !== 'serve' && this.task.kind !== 'clear') {
       this.task.done = true
       this.talking = null
     }
@@ -73,6 +84,16 @@ export class Bartender {
     this.step(dt, time)
     this.avatar.group.rotation.y += wrap(this.heading - this.avatar.group.rotation.y) * (1 - Math.exp(-dt * 6))
     this.avatar.update(dt, { speed: this.speed, time })
+    this.holdGlass()
+  }
+
+  /** Keeps a carried glass upright in his left hand. */
+  holdGlass() {
+    if (!this.held) return
+    const g = this.held.group
+    this.avatar.group.updateMatrixWorld(true)
+    this.bar.group.worldToLocal(this.avatar.hand('L', g.position, HAND_GLASS))
+    g.quaternion.identity()
   }
 
   decide(time) {
@@ -85,6 +106,13 @@ export class Bartender {
     this.talking = null
     const order = this.orders.shift()
     if (order) { this.startServe(order); return }
+    // Empties he's let stand a while, unless someone's about to order into them.
+    const empty = this.state.empties(CLEAR_AFTER)[0]
+    if (empty !== undefined && this.lastWasChore !== 'clear') {
+      this.task = { kind: 'clear', seat: empty, phase: 'collect-walk', t: 0 }
+      this.lastWasChore = 'clear'
+      return
+    }
     const cs = this.customers
     if (cs.length && this.lastWasChore !== false) {
       // A spell with someone: whoever spoke last if still here, else the next stool along.
@@ -112,7 +140,58 @@ export class Bartender {
       this.task = { kind: 'chore', station: this.bar.stations.find((s) => s.name === 'shelf'), phase: 'walk', x: 2.2, dur: 6 }
       return
     }
-    this.task = { kind: 'serve', seat, drink: d, by, bottle, phase: 'fetch', x: this.bar.bottleInfo[bottle].pos.x, t: 0 }
+    // An empty at that stool goes back to the pad first, then a new glass rezzes in.
+    const phase = this.state.glasses[seat] ? 'collect-walk' : 'pad-walk'
+    this.task = { kind: 'serve', seat, drink: d, by, bottle, phase, t: 0 }
+  }
+
+  /**
+   * The glass's part of a task, shared by serving and clearing: collect an
+   * empty from the stool, take it to the pad and de-rez it, and (serving)
+   * wait there while a new one rezzes in. True when done.
+   */
+  glassWork(dt, t, rezNew) {
+    const av = this.avatar, gw = this.glassware
+    const seatX = this.bar.seats[t.seat].x
+    if (t.phase === 'collect-walk') {
+      av.armPose.L = null
+      if (this.walkTo(dt, seatX, TALK_Z)) { t.phase = 'collect'; t.t = 0 }
+      return false
+    }
+    if (t.phase === 'collect') {
+      this.heading = 0
+      av.lean = 0.35
+      av.armPose.L = [0.12, -0.15, 0.98] // reaching across the counter
+      t.t += dt
+      if (t.t > 0.8) {
+        this.held = gw.take(t.seat)
+        t.phase = 'pad-walk'
+        t.t = 0
+      }
+      return false
+    }
+    if (t.phase === 'pad-walk') {
+      av.lean = 0
+      av.armPose.L = this.held ? [0.15, -0.55, 0.82] : null
+      if (this.walkTo(dt, this.bar.rezPad.x, TALK_Z)) { t.phase = 'pad'; t.t = 0 }
+      return false
+    }
+    if (t.phase === 'pad') {
+      this.heading = 0
+      av.lean = 0.25
+      av.armPose.L = [0.1, -0.5, 0.86]
+      if (!t.job) {
+        if (this.held) { t.job = gw.pad.derez(this.held); this.held = null; t.out = true }
+        else if (rezNew) t.job = gw.pad.rez(gw.make(t.drink))
+        else return true
+      }
+      if (!t.job.done) return false
+      if (t.out) { t.out = false; t.job = null; return false } // the empty's gone; now the new one, if any
+      this.held = t.job.glass
+      t.job = null
+      return true
+    }
+    return true
   }
 
   /** Walks along the lane toward x (and z); true when there. */
@@ -169,11 +248,19 @@ export class Bartender {
       return
     }
     if (t.kind === 'serve') this.serve(dt, time, t)
+    if (t.kind === 'clear') {
+      if (this.glassWork(dt, t, false)) { av.armPose.L = null; t.done = true }
+    }
   }
 
   serve(dt, time, t) {
     const av = this.avatar
     const info = this.bar.bottleInfo[t.bottle]
+    if (t.phase === 'collect-walk' || t.phase === 'collect' || t.phase === 'pad-walk' || t.phase === 'pad') {
+      if (this.glassWork(dt, t, true)) { t.phase = 'fetch'; t.t = 0 }
+      return
+    }
+    if (this.held) av.armPose.L = [0.15, -0.55, 0.82] // the new glass, carried
     if (t.phase === 'fetch') {
       if (!this.walkTo(dt, info.pos.x)) return
       this.heading = Math.PI // facing the shelf
@@ -196,12 +283,20 @@ export class Bartender {
     if (t.phase === 'pour') {
       this.heading = 0
       av.lean = 0.3
+      // The glass down on the counter first, then the pour fills it.
+      if (this.held) {
+        t.glass = this.held
+        this.held = null
+        this.glassware.place(t.seat, t.glass)
+        av.armPose.L = null
+      }
       av.armPose.R = [-0.15, -0.2, 0.97]
       if (this.carry) this.carry.rotation.z = -Math.min(1.9, t.t * 2)
       t.t += dt
+      if (t.glass) t.glass.setLevel(Math.max(0, (t.t - 0.6) / 1.6))
       if (t.t > 2.2) {
         this.state.pour(t.bottle, t.seat, t.drink, t.by)
-        this.onPoured(t.seat, t.drink)
+        this.onPoured(t.seat, t.drink, t.glass)
         this.say(pick([
           `One ${t.drink.name}, ${t.drink.note}.`,
           `${t.drink.name}. Paid in cycles; drink slowly or don't.`,

@@ -44,9 +44,10 @@ by the community that gathers at [exo.cafe](https://exo.cafe).
   hips follow; your elbows prop you on the counter on the side away from
   where you look. In third person, come round to the front and your avatar
   looks ahead, so you can see its face. A POS terminal rises out of the counter with the menu
-  and your tab; order, and Max fetches the bottle, pours, and sets it in
-  front of you. Click the glass to drink: you raise it and drink a sixth
-  of it, and the sip goes on your tab, which your compute pays to his
+  and your tab; order, and Max waits at the pad on the counter while a
+  glass rezzes in, fetches the bottle, sets the glass in front of you and
+  pours. Empties go back to the pad to de-rez. Click the glass to drink: you raise it and drink a sixth
+  of it (elbows and all), and the sip goes on your tab, which your compute pays to his
   mind. Leave it unfinished and your terminal and your stool wait for you.
 - **Max Pablo tends bar.** He shuffles between the taps, the sink, the
   shelf and the till, splits his time between chores and customers,

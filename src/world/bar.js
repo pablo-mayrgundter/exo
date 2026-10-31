@@ -285,10 +285,13 @@ export function makeBar({ names }) {
   const seats = Array.from({ length: 7 }, (_, k) => ({ index: k, x: -4.5 + k * 1.5, z: -2.9, y: 0.82 }))
   // Where a glass stands on the counter in front of each stool.
   const glassAt = (seat) => new THREE.Vector3(seat.x, 1.18, -3.55)
+  // Where glasses rez in and de-rez: a pad on the counter's back edge,
+  // between the middle stools, in reach of Max's lane.
+  const rezPad = new THREE.Vector3(0.75, 1.18, -4.25)
 
   return {
     group, exterior, colliders, portalAnchor, max, life,
-    seats, glassAt, bottles, bottleInfo,
+    seats, glassAt, rezPad, bottles, bottleInfo,
     /** Max's lane behind the counter, and the chores along it (bar space). */
     lane: { z: -5.3, x0: -5, x1: 5 },
     stations: [

@@ -51,7 +51,19 @@ export function makeGlass(drink) {
     liquid.visible = l > 0.01
   }
   setLevel(1)
-  return { group, setLevel }
+  // Rezzing in (0 → 1) or out (1 → 0): built from the base up, the outline
+  // fading in, the liquid only once it's whole.
+  const setRez = (f) => {
+    group.scale.y = Math.max(0.001, f)
+    outline.material.opacity = f >= 1 ? 0.6 : 0.6 * f * (0.6 + 0.4 * Math.random())
+    if (f < 1) liquid.visible = false
+  }
+  const dispose = () => {
+    group.removeFromParent()
+    outline.geometry.dispose(); outline.material.dispose()
+    liquid.geometry.dispose(); liquid.material.dispose()
+  }
+  return { group, setLevel, setRez, dispose }
 }
 
 /** The bar's saved state, and the shelf it's kept in sync with. */
@@ -133,8 +145,10 @@ export class BarState {
     const before = g.consumed
     g.consumed = Math.min(DRINK_CYCLES, g.consumed + DRINK_CYCLES / GULPS)
     this.tab.owed += g.consumed - before
+    const empty = g.consumed >= DRINK_CYCLES
+    if (empty) g.emptied = Date.now()
     this.save()
-    return g.consumed >= DRINK_CYCLES
+    return empty
   }
 
   /** Pays the tab with donated half-cycles. Returns how many it took (no more than owed). */
@@ -143,6 +157,13 @@ export class BarState {
     this.tab.owed -= p
     this.tab.cycles += p / 2 // half-cycles in, cycles on the tab
     return p
+  }
+
+  /** Stools with an empty glass that's stood for `ms` (Max clears them). */
+  empties(ms = 0, now = Date.now()) {
+    return Object.entries(this.glasses)
+      .filter(([, g]) => g.consumed >= DRINK_CYCLES && now - (g.emptied ?? 0) >= ms)
+      .map(([s]) => Number(s))
   }
 
   clear(seat) {

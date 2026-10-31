@@ -55,8 +55,13 @@ would otherwise rediscover.
 - **Saved state between runs.** The vCPU resumes from OPFS and the bar
   from localStorage; tests that need a known start use `?fresh` (the
   chip from power-on) or a new browser context. `exo.sitDown(i)`,
-  `exo.barLife.order(id)` and `exo.barLife.bartender.task` drive and
-  read the bar.
+  `exo.barLife.order(id)` and `exo.barLife.bartender.task` (its `kind`,
+  `phase` and pad `job`) drive and read the bar; `exo.barLife.state` is
+  the saved state (`gulp(seat)` empties a glass a sixth at a time).
+- **Freezing a moment for a screenshot.** Animations run on
+  `exo.clock`; set `exo.clock.getDelta = () => 0` to hold a pose (a sip
+  started with `barLife.sip(exo.clock.elapsedTime - t)` is `t` seconds
+  in), then restore it.
 - **Element ids are global.** The canvas is `#view` (and styled full
   screen); a control named the same quietly becomes the canvas. Check
   `index.html` before naming a new element.

@@ -12,6 +12,7 @@ import * as THREE from 'three'
 import { BarState, DRINKS, drinkById, drinkIn, makeGlass, DRINK_CYCLES } from './drinks.js'
 import { SIP, GRIP } from '../avatar/avatar.js'
 import { Bartender } from '../npc/bartender.js'
+import { makeRezPad } from './rezpad.js'
 
 /**
  * @param {{bar: object, avatar: object, mist: object, me: {name: string}, say: (t: string) => void,
@@ -27,18 +28,43 @@ export function makeBarLife({ bar, avatar, mist, me, say, note, respond }) {
   let sip = null // { start, seat, gulped }: a sip under way
   let paying = false // while the tab is owed, your budget goes to Max's mind
   const shown = {} // seat → the level drawn, easing toward the real one
+  const pad = makeRezPad(bar)
   const bartender = new Bartender({
     avatar: bar.max, bar, state, say,
-    onPoured: (s, drink) => {
-      placeGlass(s, drink)
+    onPoured: (s, drink, glass) => {
+      if (glass) {
+        if (glasses[s] && glasses[s].glass !== glass) glasses[s].glass.dispose()
+        glasses[s] = { glass, drink }
+        shown[s] = state.level(s)
+        glass.setLevel(shown[s])
+      } else placeGlass(s, drink)
       if (s === seat) offered = false
+    },
+    // The glasses Max handles: rezzed in on the pad, taken off the counter
+    // (and out of the bar's state) to be de-rezzed, set down to be poured.
+    glassware: {
+      pad,
+      make: (drink) => makeGlass(drink),
+      take(s) {
+        const g = glasses[s]
+        if (!g || g.remote) return null
+        if (sip?.seat === s) sip = null
+        delete glasses[s]
+        delete shown[s]
+        state.clear(s)
+        return g.glass
+      },
+      place(s, glass) {
+        glass.group.position.copy(bar.glassAt(bar.seats[s]))
+        glass.group.quaternion.identity()
+      },
     },
   })
   // Glasses left on the counter last visit.
   for (const [s, g] of Object.entries(state.glasses)) placeGlass(Number(s), drinkById(g.drink))
 
   function placeGlass(s, drink) {
-    if (glasses[s]) bar.group.remove(glasses[s].glass.group)
+    if (glasses[s]) glasses[s].glass.dispose()
     const glass = makeGlass(drink)
     glass.group.position.copy(bar.glassAt(bar.seats[s]))
     bar.group.add(glass.group)
@@ -176,6 +202,7 @@ export function makeBarLife({ bar, avatar, mist, me, say, note, respond }) {
       const customers = others.map((o) => ({ seat: o.seat, name: o.name, drinking: state.level(o.seat) > 0 }))
       if (seat !== null) customers.push({ seat, name: me.name, drinking: state.level(seat) > 0 })
       bartender.update(dt, time, customers)
+      pad.update(dt, time)
       settle()
       // A sip: the gulp when the glass reaches your mouth, and the glass back
       // on the counter at the end.
