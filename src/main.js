@@ -415,7 +415,7 @@ function sitDown(i) {
   controls.yaw = 0
   controls.pitch = 0.08
   setView(view.seated)
-  note('Seated. Look around with the mouse; order on the terminal (or press 1–4), or just ask Max. E to stand.')
+  note('Seated. Look around with the mouse; order on the terminal (or press 1–4), or just ask Max. Click your glass to drink. E to stand.')
 }
 function standUp() {
   const s = bar.seats[barLife.seat]
@@ -448,8 +448,13 @@ controls.onClick = (e) => {
   if (side !== 0 || !entered) return
   const ndc = new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1)
   ray.setFromCamera(ndc, camera)
-  // Your stool's terminal: a tap on a menu row orders it.
+  // Your stool's terminal: a tap on a menu row orders it. Your glass: a sip.
   if (barLife.seat !== null) {
+    const glass = barLife.glassAt(barLife.seat)
+    if (glass && ray.intersectObject(glass, true)[0]) {
+      if (!barLife.sip(clock.elapsedTime) && barLife.level(barLife.seat) <= 0) note('Empty. Order another on the terminal.')
+      return
+    }
     const t = ray.intersectObject(terminals.terminals[barLife.seat].screen)[0]
     const d = terminals.drinkAt(t)
     if (d) { barLife.order(d.id); return }
@@ -596,7 +601,8 @@ function frame() {
   gate.update(now, side === 0 ? pos : null)
   const nearCar = side === 0 && pos.distanceTo(car.group.position) < 4.5
   const nearSeat = side === 0 && !seatedNow && !riding && barLife.freeSeatNear(pos, takenSeats()) >= 0
-  const prompt = riding ? 'E · step off the Art Car' : seatedNow ? 'E · stand up' : nearSeat ? 'E · sit' : nearCar ? 'E · ride the Art Car' : gate.near ? 'E · jack into NetMap' : null
+  const prompt = riding ? 'E · step off the Art Car'
+    : seatedNow ? (barLife.mine(barLife.seat) ? 'Click the glass to drink · E · stand up' : 'E · stand up') : nearSeat ? 'E · sit' : nearCar ? 'E · ride the Art Car' : gate.near ? 'E · jack into NetMap' : null
   // The prompt shows in the middle for a few seconds, then docks in the panel.
   if (prompt !== promptText) { promptText = prompt; promptSince = now }
   const centred = entered && prompt && now - promptSince < 3

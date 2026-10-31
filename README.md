@@ -44,9 +44,9 @@ by the community that gathers at [exo.cafe](https://exo.cafe).
   hips follow; your elbows prop you on the counter on the side away from
   where you look. A POS terminal rises out of the counter with the menu
   and your tab; order, and Max fetches the bottle, pours, and sets it in
-  front of you. A drink is a donation to his mind, and it empties as
-  those cycles are spent; leave it unfinished and your terminal and your
-  stool wait for you.
+  front of you. Click the glass to drink: each sip donates a few seconds
+  of your compute to his mind, and the glass drops by what it gave. Leave
+  it unfinished and your terminal and your stool wait for you.
 - **Max Pablo tends bar.** He shuffles between the taps, the sink, the
   shelf and the till, splits his time between chores and customers,
   thinks his aphorisms aloud, and in conversation he's

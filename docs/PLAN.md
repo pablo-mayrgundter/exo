@@ -102,8 +102,8 @@ real computer, a bartender, and other people.*
   - [x] Max fetches a bottle of the drink's colour from the back bar, carries it, pours, and puts it back; bottles hold four pours, and he restocks empties at the shelf
   - [x] Orders interrupt his chores and conversation
 - **S1.7.3** As a visitor, my drink is a donation. ✅
-  - [x] A drink on the bar donates to Max's mind; it empties as those cycles are spent (≈200k half-cycles); your tab counts drinks and cycles
-  - [x] You sip now and then; an empty glass gets "another?", and shorter conversations
+  - [x] A drink is drunk a sip at a time, by clicking your glass: for the sip (4 s) your budget is donated to Max's mind and the glass drops by what it donated (a drink holds ≈200k half-cycles); untouched, nothing is drunk or donated
+  - [x] Your tab counts drinks and cycles; an empty glass gets "another?", and shorter conversations
   - [ ] Drinks for others: buy a round (a donation in their name)
 - **S1.7.4** As a regular, the bar remembers. ✅ (in this browser)
   - [x] Glasses on the counter, bottle levels, your tab and Max's memory of you in localStorage

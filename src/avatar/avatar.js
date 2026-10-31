@@ -293,13 +293,14 @@ export class Avatar {
 
   /**
    * Sits on a seat: legs down to the footrest, and a seated controller for
-   * the rest. `drink` (set from outside) makes it sip now and then.
+   * the rest. Setting `seated.sipUntil` (a click on the glass) raises the
+   * drink to the mouth until then.
    */
   sit() {
     this.seated = {
       support: 'both', mode: 'both', nextMode: 0,
       shift: { lean: 0.12, x: 0, tilt: 0 }, want: { lean: 0.12, x: 0, tilt: 0 }, nextShift: 0,
-      drink: false, sipUntil: 0, nextSip: 0, lean: 0.12, x: 0, tilt: 0,
+      sipUntil: 0, lean: 0.12, x: 0, tilt: 0,
     }
   }
 
@@ -346,10 +347,6 @@ export class Avatar {
     // Arms: on the counter, or resting; the right hand brings the drink up.
     const onCounter = { L: [0.1, -0.3, 0.95], R: [-0.1, -0.3, 0.95] }
     const resting = { L: [0.06, -0.85, 0.5], R: [-0.06, -0.85, 0.5] }
-    if (st.drink && time > st.nextSip) {
-      st.sipUntil = time + 2.2
-      st.nextSip = time + 10 + Math.random() * 10
-    }
     const sipping = time < st.sipUntil
     for (const side of ['L', 'R']) {
       const props = st.support === 'both' || st.support === side
