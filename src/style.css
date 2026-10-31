@@ -83,6 +83,13 @@ button { font-family: var(--mono); }
 .mist .give button:disabled { opacity: 0.35; cursor: default; }
 .mist .small { font-size: 11.5px; }
 .mist p { margin: 6px 0 0; }
+.caption {
+  position: fixed; z-index: 2; left: 50%; bottom: 120px; transform: translateX(-50%); width: min(640px, calc(100vw - 32px));
+  padding: 8px 14px; background: rgba(5, 10, 31, 0.88); border-left: 3px solid var(--orange);
+  color: var(--text); font-family: var(--mono); font-size: 15px; line-height: 1.45;
+}
+.caption[hidden] { display: none; }
+.caption b { color: var(--orange-soft); font-weight: 400; letter-spacing: 0.12em; }
 .order {
   position: fixed; z-index: 2; left: 50%; bottom: 64px; transform: translateX(-50%);
   display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px; max-width: calc(100vw - 32px);
@@ -144,6 +151,7 @@ button { font-family: var(--mono); }
 @media (max-width: 1180px) {
   .chat { bottom: auto; top: 52px; }
   .order { bottom: auto; top: 100px; }
+  .caption { bottom: 236px; }
   .hint { top: 100px; }
 }
 @media (max-width: 720px) {

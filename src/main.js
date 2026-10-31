@@ -24,6 +24,8 @@ import { Mist, Job } from './mist/scheduler.js'
 import { makeMistPanel, makeChipToken } from './mist/panel.js'
 import { makeArtCar } from './world/artcar.js'
 import { makeBarLife } from './world/barlife.js'
+import { makeEliza } from './npc/eliza.js'
+import { MAX_SCRIPT } from './npc/max-script.js'
 import { makeJukebox } from './world/jukebox.js'
 import { Presence, BroadcastTransport } from './net/presence.js'
 import { Controls } from './controls.js'
@@ -161,10 +163,17 @@ avatar.group.position.set(0, 0.08, 1)
 avatar.group.rotation.y = Math.PI
 world.add(avatar.group)
 let heading = Math.PI // the avatar's facing, radians about +y; π faces -z (the counter)
-// The stools, drinks and Max's tending (world/barlife.js). Until Max has a
-// conversation engine of his own, he answers with his aphorisms.
-let respond = () => pick(MAX.thoughts)
+// The stools, drinks and Max's tending (world/barlife.js). In conversation
+// Max is ELIZA with a bartender's script (npc/eliza.js, npc/max-script.js).
+const eliza = makeEliza(MAX_SCRIPT)
+const respond = (text) => eliza.respond(text)
 const barLife = makeBarLife({ bar, avatar, mist, me, say: (t) => maxSays(t), note: (t) => note(t), respond: (t) => respond(t) })
+// What you told Max last time ("my ..." lines) comes back in conversation.
+{
+  const regular = barLife.state.regular(me.name)
+  eliza.memory.push(...regular.memory)
+  regular.memory = eliza.memory
+}
 const controls = new Controls(canvas)
 controls.yaw = 0
 const face = new FaceTracker()
@@ -325,7 +334,19 @@ addEventListener('keydown', (e) => {
 function note(text) { $('note').textContent = text }
 function pick(a) { return a[Math.floor(Math.random() * a.length)] }
 let lastMax = 0
-function maxSays(text) { bar.max.say(text, 8); lastMax = performance.now() }
+let captionTimer = 0
+function maxSays(text) {
+  bar.max.say(text, 8)
+  lastMax = performance.now()
+  // On a stool, in first person, his bubble is above the frame: subtitle it.
+  if (barLife?.seat == null) return
+  const c = $('caption')
+  c.innerHTML = '<b>MAX PABLO</b> '
+  c.append(text)
+  c.hidden = false
+  clearTimeout(captionTimer)
+  captionTimer = setTimeout(() => { c.hidden = true }, 9000)
+}
 
 /** E: the nearest thing that does something. */
 function interact() {
@@ -372,6 +393,7 @@ function standUp() {
   controls.dist = Math.max(standDist, 4)
   controls.pitch = 0.3
   $('order').hidden = true
+  $('caption').hidden = true
 }
 function board() {
   riding = true

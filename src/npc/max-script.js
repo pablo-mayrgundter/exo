@@ -240,11 +240,11 @@ export const MAX_SCRIPT = {
         'How long have you been feeling that way? I\'ll get you some water.',
       ] },
       { decomp: '*', reasmb: [
-        'Drinks here cost compute, not cash. Tap my chip token, donate a few cycles, and I\'ll pour.',
+        'Drinks here cost compute, not cash. Name one and it draws on your vCPU budget while it\'s in front of you.',
         'We do four: Zero Page, Carry Flag, Non-Maskable Interrupt, Stack Overflow. All 8-bit, all paid in cycles.',
         'Coming up. While I pour: what\'s really on your mind?',
         'A drink won\'t fix it, but it\'ll keep you company while you tell me. Go on.',
-        'First round\'s on the house. Second round, you donate a few cycles.',
+        'Every round\'s paid in donated cycles. The glass empties as they\'re spent; that\'s the whole trick.',
       ] },
     ] },
     { name: 'jukebox', key: ['jukebox', 'music', 'song', 'songs', 'tune', 'tunes', 'track', 'dance', 'dancing'], rank: 20, bar: true, rules: [
@@ -428,7 +428,7 @@ export const MAX_SCRIPT = {
         'Do you think coming here will help you not to be (2)?',
         'I\'m sure it\'s not pleasant to be (2). Want to tell me more?',
         'Can you explain what made you (2)?',
-        'Sorry to hear you\'re (2). This one\'s on the house, and so is the listening.',
+        'Sorry to hear you\'re (2). The listening\'s on the house.',
       ] },
       { decomp: '* i am @happy *', reasmb: [
         'How have I helped you to be (2)?',
@@ -744,7 +744,7 @@ const GREETINGS = [
   'Evening, {name}. Pull up a stool. What\'s on your mind?',
   '{name}! Good to see you. Something to drink, or something to talk about?',
   'Welcome to Exo Cafe, {name}. You\'re on the NMI pad: the one interrupt the CPU can\'t ignore. Neither can I. What\'s up?',
-  'Hi, {name}. First round\'s on the house; the listening\'s always free. How are you, really?',
+  'Hi, {name}. The listening\'s always free. How are you, really?',
 ]
 
 /** Max's hello for a guest by name (or a plain one without). */
