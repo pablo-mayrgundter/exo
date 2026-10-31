@@ -24,7 +24,7 @@ const cap = (a, b, r) => ({ kind: 'capsule', a, b, r })
 const ARM_TMP = new THREE.Quaternion()
 const HAND_W = new THREE.Vector3(), HAND_A = new THREE.Vector3(), HAND_B = new THREE.Vector3(), HAND_D = new THREE.Vector3()
 const HAND_S = new THREE.Vector3(), HAND_Q = new THREE.Quaternion(), HAND_M = new THREE.Matrix4(), UP = new THREE.Vector3(0, 1, 0)
-const ARM_V = new THREE.Vector3()
+const ARM_V = new THREE.Vector3(), ARM_W = new THREE.Vector3()
 const ball = (c, r) => ({ kind: 'sphere', a: c, r })
 
 // Pivots in avatar space (metres, feet at the origin, facing +z); prims in
@@ -32,19 +32,72 @@ const ball = (c, r) => ({ kind: 'sphere', a: c, r })
 export const PARTS = {
   torso: { pivot: [0, 0.92, 0], prims: [cap([0, 0.06, 0], [0, 0.34, 0], 0.15), cap([-0.15, 0.42, 0], [0.15, 0.42, 0], 0.09)] },
   head: { pivot: [0, 1.44, 0], prims: [cap([0, 0, 0], [0, 0.08, 0], 0.05), ball([0, 0.2, 0], 0.125)] },
-  armL: { pivot: [0.25, 1.36, 0], prims: [cap([0.02, 0, 0], [0.05, -0.55, 0], 0.052)] },
-  armR: { pivot: [-0.25, 1.36, 0], prims: [cap([-0.02, 0, 0], [-0.05, -0.55, 0], 0.052)] },
+  // Arms in two: the upper arm from the shoulder, the forearm from the elbow.
+  armL: { pivot: [0.25, 1.36, 0], prims: [cap([0.02, 0, 0], [0.035, -0.29, 0], 0.052)] },
+  armR: { pivot: [-0.25, 1.36, 0], prims: [cap([-0.02, 0, 0], [-0.035, -0.29, 0], 0.052)] },
+  foreL: { pivot: [0.285, 1.07, 0], prims: [cap([0, 0, 0], [0.015, -0.26, 0], 0.048)] },
+  foreR: { pivot: [-0.285, 1.07, 0], prims: [cap([0, 0, 0], [-0.015, -0.26, 0], 0.048)] },
   legL: { pivot: [0.095, 0.94, 0], prims: [cap([0, -0.02, 0], [0, -0.86, 0.01], 0.072)] },
   legR: { pivot: [-0.095, 0.94, 0], prims: [cap([0, -0.02, 0], [0, -0.86, 0.01], 0.072)] },
 }
-// Each arm's end (the wrist) in its pivot's space, and its rest direction.
-const ARM_END = { L: new THREE.Vector3(0.05, -0.55, 0), R: new THREE.Vector3(-0.05, -0.55, 0) }
-const REST = { L: ARM_END.L.clone().normalize(), R: ARM_END.R.clone().normalize() }
+// The elbow in the upper arm's space, the wrist in the forearm's, and the
+// directions each points at rest.
+const ELBOW = { L: new THREE.Vector3(0.035, -0.29, 0), R: new THREE.Vector3(-0.035, -0.29, 0) }
+const ARM_END = { L: new THREE.Vector3(0.015, -0.26, 0), R: new THREE.Vector3(-0.015, -0.26, 0) }
+const REST = { L: ELBOW.L.clone().normalize(), R: ELBOW.R.clone().normalize() }
+const REST_FORE = { L: ARM_END.L.clone().normalize(), R: ARM_END.R.clone().normalize() }
+const UPPER_LEN = ELBOW.L.length(), FORE_LEN = ARM_END.L.length()
+export const ARM_LEN = UPPER_LEN + FORE_LEN
+const SHOULDER = { L: new THREE.Vector3(...PARTS.armL.pivot), R: new THREE.Vector3(...PARTS.armR.pivot) }
+// Which way elbows point when an arm bends: down, out and a little back.
+const POLE = { L: new THREE.Vector3(0.55, -1, -0.45).normalize(), R: new THREE.Vector3(-0.55, -1, -0.45).normalize() }
+const IK_D = new THREE.Vector3(), IK_P = new THREE.Vector3(), IK_E = new THREE.Vector3(), IK_T = new THREE.Vector3()
+const FORE_TMP = new THREE.Quaternion(), BEND = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -0.25)
+
+/**
+ * An arm's aim as the upper arm's and forearm's directions (body space).
+ * It may be: a direction, [x, y, z], for the whole arm, nearly straight;
+ * both directions, [upper x, y, z, fore x, y, z] (tracked, with the elbow
+ * seen); or `{hand: [x, y, z]}`, where the wrist should be.
+ */
+function armDirections(side, aim, upper, fore) {
+  if (aim.hand) return solveArm(side, IK_T.fromArray(aim.hand), upper, fore)
+  if (aim.length >= 6) {
+    upper.set(aim[0], aim[1], aim[2]).normalize()
+    fore.set(aim[3], aim[4], aim[5]).normalize()
+    return
+  }
+  IK_T.set(aim[0], aim[1], aim[2]).normalize().multiplyScalar(ARM_LEN * 0.96).add(SHOULDER[side])
+  solveArm(side, IK_T, upper, fore)
+}
+
+/**
+ * Two-bone IK: the upper arm's and the forearm's directions (body space,
+ * unit) that put an arm's wrist at `hand`, the elbow bent toward `pole`.
+ * Out of reach, the arm points straight at it.
+ */
+export function solveArm(side, hand, upper, fore, pole = POLE[side]) {
+  const S = SHOULDER[side]
+  const a = UPPER_LEN, b = FORE_LEN
+  IK_D.subVectors(hand, S)
+  const d = THREE.MathUtils.clamp(IK_D.length(), Math.abs(a - b) + 1e-3, a + b - 1e-4)
+  IK_D.normalize()
+  const cosA = (a * a + d * d - b * b) / (2 * a * d)
+  const sinA = Math.sqrt(Math.max(0, 1 - cosA * cosA))
+  IK_P.copy(pole).addScaledVector(IK_D, -pole.dot(IK_D))
+  if (IK_P.lengthSq() < 1e-8) IK_P.set(0, -1, 0).addScaledVector(IK_D, IK_D.y).normalize()
+  else IK_P.normalize()
+  IK_E.copy(IK_D).multiplyScalar(a * cosA).addScaledVector(IK_P, a * sinA) // the elbow, from the shoulder
+  upper.copy(IK_E).normalize()
+  fore.copy(IK_D).multiplyScalar(d).sub(IK_E).normalize()
+}
 // A sip, in seconds from the click: reach for the glass, lift it, drink
 // (the gulp), lower it, set it down, and back to how you were sitting.
 export const SIP = { reach: 0.5, lift: 1.1, drink: 1.3, lower: 2.5, set: 3.1, end: 3.5 }
-const SHOULDER_R = new THREE.Vector3(...PARTS.armR.pivot)
-const TO_MOUTH = new THREE.Vector3(0.29, 0.3, 0.91).normalize() // right arm: the hand at the chin, clear of the eyes
+// The right wrist at the mouth: the glass in it, tipped, puts its rim to the lips.
+const AT_MOUTH = new THREE.Vector3(-0.03, 1.5, 0.27)
+// The wrist holding the glass is this far above its base.
+export const GRIP = new THREE.Vector3(0.035, -0.07, 0.04) // on the palm's side
 const SIP_V = new THREE.Vector3(), SIP_W = new THREE.Vector3()
 const ramp = (t, a, b) => THREE.MathUtils.smoothstep(t, a, b)
 // MediaPipe's hand skeleton: 21 landmarks, these bones between them.
@@ -268,15 +321,25 @@ export class Avatar {
     this.body.position.set(0, 0, 0)
     torso.pivot.rotation.set(this.lean, 0, 0)
     if (this.seated) this.updateSeated(dt, time)
-    // Tracked arms override the swing and any pose: aim each from its rest direction.
-    for (const [side, part] of [['L', armL], ['R', armR]]) {
+    // Tracked arms override the swing and any pose: aim the upper arm and
+    // the forearm each from its rest direction; the forearm hangs from the elbow.
+    const ka = 1 - Math.exp(-dt * 14)
+    for (const side of ['L', 'R']) {
+      const up = this.parts['arm' + side], fo = this.parts['fore' + side]
       const aim = this.armAim[side] ?? this.armPose[side]
-      if (!aim) { part.aimed = null; continue }
-      const want = ARM_TMP.setFromUnitVectors(REST[side], ARM_V.set(aim[0], aim[1], aim[2]))
-      part.aimed = (part.aimed ?? part.pivot.quaternion.clone()).slerp(want, 1 - Math.exp(-dt * 14))
-      part.pivot.quaternion.copy(part.aimed)
+      if (!aim) {
+        up.aimed = fo.aimed = null
+        fo.pivot.quaternion.copy(up.pivot.quaternion).multiply(BEND) // swinging, a little bent
+      } else {
+        armDirections(side, aim, ARM_V, ARM_W)
+        up.aimed = (up.aimed ?? up.pivot.quaternion.clone()).slerp(ARM_TMP.setFromUnitVectors(REST[side], ARM_V), ka)
+        fo.aimed = (fo.aimed ?? fo.pivot.quaternion.clone()).slerp(FORE_TMP.setFromUnitVectors(REST_FORE[side], ARM_W), ka)
+        up.pivot.quaternion.copy(up.aimed)
+        fo.pivot.quaternion.copy(fo.aimed)
+      }
+      fo.pivot.position.copy(ELBOW[side]).applyQuaternion(up.pivot.quaternion).add(up.pivot.position)
+      this.poseHand(side, fo)
     }
-    for (const side of ['L', 'R']) this.poseHand(side, side === 'L' ? armL : armR)
     torso.pivot.position.y = PARTS.torso.pivot[1] + Math.abs(Math.cos(this.phase)) * swing * 0.04 + Math.sin(time * 1.7) * 0.004
     const k = 1 - Math.exp(-dt * (this.seated ? 6 : 12))
     head.pivot.rotation.x += (this.headAim.x - head.pivot.rotation.x) * k
@@ -373,19 +436,20 @@ export class Avatar {
     }
   }
 
-  /** The right arm's direction at `t` seconds into a sip. */
+  /** Where the right wrist is at `t` seconds into a sip, as an arm aim: `{hand}` in body space. */
   sipArm(t) {
     const st = this.seated
-    // Toward the glass's middle on the counter, from the shoulder.
-    const reach = this.body.worldToLocal(SIP_V.copy(st.sip.glass)).add(SIP_W.set(0, 0.08, 0)).sub(SHOULDER_R).normalize()
-    const sit = SIP_W.fromArray(this.armPose.R)
+    // At the glass on the counter (its base below the wrist), at the mouth,
+    // and where the arm was sitting.
+    const reach = this.body.worldToLocal(SIP_V.copy(st.sip.glass)).sub(GRIP)
+    const sit = SIP_W.fromArray(this.armPose.R).normalize().multiplyScalar(ARM_LEN * 0.96).add(SHOULDER.R)
     const out = new THREE.Vector3()
     if (t < SIP.reach) out.lerpVectors(sit, reach, ramp(t, 0, SIP.reach))
-    else if (t < SIP.lift) out.lerpVectors(reach, TO_MOUTH, ramp(t, SIP.reach, SIP.lift))
-    else if (t < SIP.lower) out.copy(TO_MOUTH)
-    else if (t < SIP.set) out.lerpVectors(TO_MOUTH, reach, ramp(t, SIP.lower, SIP.set))
+    else if (t < SIP.lift) out.lerpVectors(reach, AT_MOUTH, ramp(t, SIP.reach, SIP.lift))
+    else if (t < SIP.lower) out.copy(AT_MOUTH)
+    else if (t < SIP.set) out.lerpVectors(AT_MOUTH, reach, ramp(t, SIP.lower, SIP.set))
     else out.lerpVectors(reach, sit, ramp(t, SIP.set, SIP.end))
-    return out.normalize().toArray()
+    return { hand: out.toArray() }
   }
 
   /**
@@ -403,7 +467,7 @@ export class Avatar {
 
   /** The wrist of an arm in world space, plus an offset in the body's frame. */
   hand(side, out = new THREE.Vector3(), offset = null) {
-    const arm = this.parts[side === 'L' ? 'armL' : 'armR'].pivot
+    const arm = this.parts['fore' + side].pivot
     out.copy(ARM_END[side]).applyQuaternion(arm.quaternion).add(arm.position)
     if (offset) out.add(offset)
     return this.body.localToWorld(out)

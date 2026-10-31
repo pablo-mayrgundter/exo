@@ -232,8 +232,8 @@ export class Bartender {
   takeBottle(info) {
     const b = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.08, 0.38, 10),
       new THREE.MeshBasicMaterial({ color: info.color, toneMapped: false }))
-    b.position.set(-0.05, -0.62, 0.02)
-    this.avatar.parts.armR.pivot.add(b)
+    b.position.set(-0.02, -0.3, 0.03) // in the hand, past the wrist
+    this.avatar.parts.foreR.pivot.add(b)
     this.carry = b
   }
 

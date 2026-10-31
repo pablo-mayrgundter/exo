@@ -672,14 +672,16 @@ function frame() {
   const fpv = view[viewKey()] === 'first' && !riding
   if (fpv && !seatedNow && entered) heading = controls.yaw + Math.PI // walking in first person: face where you look
   avatar.parts.head.pivot.visible = !fpv
-  // Your own arm, a hand's breadth from your eyes while you drink, would fill
-  // the view: in first person the glass comes up on its own.
-  avatar.parts.armR.pivot.visible = !(fpv && avatar.sipHold(now).attach > 0.2)
+  // Your own forearm, a hand's breadth from your eyes while you drink,
+  // would hide the glass: in first person the glass comes up on its own.
+  const hold = avatar.sipHold(now)
+  avatar.parts.armR.pivot.visible = avatar.parts.foreR.pivot.visible = !(fpv && hold.attach > 0.2)
   if (avatar.label) avatar.label.visible = !fpv
   if (fpv) {
     avatar.group.updateMatrixWorld(true)
     const eye = avatar.parts.head.pivot.localToWorld(new THREE.Vector3(0, 0.22, 0.14))
-    const yaw = controls.yaw, pitch = controls.pitch - 0.08
+    // Drinking, you look down into the glass as it comes up.
+    const yaw = controls.yaw, pitch = controls.pitch - 0.08 + hold.tilt * 0.45
     const dir = new THREE.Vector3(-Math.sin(yaw) * Math.cos(pitch), -Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch))
     camera.position.copy(eye)
     camera.lookAt(eye.clone().addScaledVector(dir, unit))

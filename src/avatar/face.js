@@ -118,9 +118,12 @@ export class FaceTracker {
       const p = this.pose.detectForVideo(this.video, performance.now())
       const w = p.worldLandmarks?.[0], img = p.landmarks?.[0]
       for (const side of ['L', 'R']) {
-        const [sh, , wr] = ARM[side]
+        const [sh, el, wr] = ARM[side]
         const seen = img && img[sh].visibility > 0.5 && img[wr].visibility > 0.5
-        this.arms[side] = seen && w ? armDirection(w[sh], w[wr]) : null
+        // With the elbow seen too, the upper arm and the forearm each; else the whole arm.
+        const elbow = seen && img[el].visibility > 0.5
+        this.arms[side] = !seen || !w ? null
+          : elbow ? [...armDirection(w[sh], w[el]), ...armDirection(w[el], w[wr])] : armDirection(w[sh], w[wr])
         this.wristsImg[side] = img && img[wr].visibility > 0.3 ? img[wr] : null
       }
       return

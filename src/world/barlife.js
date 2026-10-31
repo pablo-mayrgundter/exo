@@ -10,7 +10,7 @@
 // another, and drifts back to his chores.
 import * as THREE from 'three'
 import { BarState, DRINKS, drinkById, drinkIn, makeGlass, DRINK_CYCLES } from './drinks.js'
-import { SIP } from '../avatar/avatar.js'
+import { SIP, GRIP } from '../avatar/avatar.js'
 import { Bartender } from '../npc/bartender.js'
 
 /**
@@ -50,7 +50,7 @@ export function makeBarLife({ bar, avatar, mist, me, say, note, respond }) {
   // Where the glass is while you sip: from the counter into your hand, up
   // to your mouth, tipped, and back down.
   const HAND = new THREE.Vector3(), Q = new THREE.Quaternion(), QA = new THREE.Quaternion(), TIP = new THREE.Quaternion()
-  const X = new THREE.Vector3(1, 0, 0), GRIP = new THREE.Vector3(0, -0.07, 0.03)
+  const X = new THREE.Vector3(1, 0, 0)
   function holdGlass(s, time) {
     const g = glasses[s]?.glass.group
     if (!g) return
