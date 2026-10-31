@@ -24,6 +24,7 @@ import { Mist, Job } from './mist/scheduler.js'
 import { makeMistPanel, makeChipToken } from './mist/panel.js'
 import { makeArtCar } from './world/artcar.js'
 import { makeBarLife } from './world/barlife.js'
+import { makeTerminals } from './world/pos.js'
 import { makeEliza } from './npc/eliza.js'
 import { MAX_SCRIPT } from './npc/max-script.js'
 import { makeJukebox } from './world/jukebox.js'
@@ -234,13 +235,28 @@ function enter() {
   setTimeout(() => { $('hint').style.opacity = '0' }, 12000)
 }
 
-// The menu, while you're on a stool.
-$('order').innerHTML = '<span class="label">Order</span>' + barLife.DRINKS.map((d) =>
-  `<button type="button" data-drink="${d.id}" style="--c:#${new THREE.Color(d.color).getHexString()}">${d.name}</button>`).join('')
-$('order').addEventListener('click', (e) => {
-  const b = e.target.closest('[data-drink]')
-  if (b) barLife.order(b.dataset.drink)
-})
+// A POS terminal per stool: up while someone sits there or has a drink open.
+const terminals = makeTerminals(bar, barLife.DRINKS)
+
+// First or third person, remembered separately for sitting and walking.
+const view = { seated: 'first', walking: 'third' }
+try { Object.assign(view, JSON.parse(localStorage.getItem('exo.cafe/view'))) } catch { /* defaults */ }
+const viewKey = () => (barLife.seat !== null ? 'seated' : 'walking')
+function setView(mode) {
+  view[viewKey()] = mode
+  try { localStorage.setItem('exo.cafe/view', JSON.stringify(view)) } catch { /* fine */ }
+  if (mode === 'third') controls.dist = Math.max(controls.dist, barLife.seat !== null ? 3 : 5)
+  $('viewmode').textContent = mode === 'first' ? 'View · 1st' : 'View · 3rd'
+  $('viewmode').setAttribute('aria-pressed', String(mode === 'first'))
+}
+$('viewmode').addEventListener('click', () => setView(view[viewKey()] === 'first' ? 'third' : 'first'))
+// Scrolling out of first person goes to third; all the way in comes back.
+controls.onZoom = (f) => {
+  const k = viewKey()
+  if (view[k] === 'first') { if (f > 1) setView('third'); return false }
+  if (f < 1 && controls.dist <= controls.minDist * 1.05) { setView('first'); return false }
+}
+setView(view[viewKey()])
 
 // The Mist: a dashboard, and $ coins on the things you can give to.
 const mistPanel = makeMistPanel(mist, $('mist'))
@@ -283,12 +299,20 @@ $('share').addEventListener('click', () => {
     : 'Nobody sees your rez now: to everyone else you\'re a guest in voxels.')
 })
 
+$('cam').addEventListener('click', () => {
+  const show = $('selfie').hidden
+  $('selfie').hidden = !show
+  $('cam').setAttribute('aria-pressed', String(show))
+})
+
 $('mirror').addEventListener('click', async () => {
   const btn = $('mirror')
   if (face.running) {
     face.stop()
     avatar.face = null
     $('selfie').hidden = true
+    $('cam').hidden = true
+    $('cam').setAttribute('aria-pressed', 'false')
     btn.setAttribute('aria-pressed', 'false')
     return
   }
@@ -298,8 +322,10 @@ $('mirror').addEventListener('click', async () => {
     const video = await face.start()
     const selfie = $('selfie')
     selfie.srcObject = video.srcObject
-    selfie.hidden = false
     selfie.play().catch(() => {})
+    // No preview by default, for immersion: a CAM light says it's on, and
+    // shows the video when clicked.
+    $('cam').hidden = false
     btn.setAttribute('aria-pressed', 'true')
     note('Mirroring your face.')
     maxSays(pick(MAX.face))
@@ -327,6 +353,12 @@ addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT') return
   if (e.key === 'Enter' && entered) { e.preventDefault(); $('say').focus() }
   if (e.code === 'KeyE') interact()
+  if (e.code === 'KeyV' && entered) setView(view[viewKey()] === 'first' ? 'third' : 'first')
+  // 1–4 on a stool orders from the terminal's menu.
+  if (barLife.seat !== null && /^Digit[1-9]$/.test(e.code)) {
+    const d = barLife.DRINKS[Number(e.code.slice(5)) - 1]
+    if (d) barLife.order(d.id)
+  }
   jukebox.key(e) // J play/pause, N next, M mute
   if (e.key === 'Escape') { $('menu').hidden = true }
 })
@@ -378,22 +410,21 @@ function sitDown(i) {
   barLife.sit(i)
   heading = Math.PI // facing the counter
   standDist = controls.dist
-  controls.minDist = 0.3
-  controls.dist = 0.3 // first person; zoom out for the third
+  controls.minDist = 2.2
+  controls.dist = 3
   controls.yaw = 0
   controls.pitch = 0.08
-  $('order').hidden = false
-  note('Seated. Look around with the mouse; order from the menu or just ask Max. E to stand.')
+  setView(view.seated)
+  note('Seated. Look around with the mouse; order on the terminal (or press 1–4), or just ask Max. E to stand.')
 }
 function standUp() {
   const s = bar.seats[barLife.seat]
   barLife.stand()
   avatar.group.position.set(s.x, 0.08, s.z + 1)
-  controls.minDist = 2.2
   controls.dist = Math.max(standDist, 4)
   controls.pitch = 0.3
-  $('order').hidden = true
   $('caption').hidden = true
+  setView(view.walking)
 }
 function board() {
   riding = true
@@ -417,6 +448,12 @@ controls.onClick = (e) => {
   if (side !== 0 || !entered) return
   const ndc = new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1)
   ray.setFromCamera(ndc, camera)
+  // Your stool's terminal: a tap on a menu row orders it.
+  if (barLife.seat !== null) {
+    const t = ray.intersectObject(terminals.terminals[barLife.seat].screen)[0]
+    const d = terminals.drinkAt(t)
+    if (d) { barLife.order(d.id); return }
+  }
   const hit = ray.intersectObjects(coins, true)[0]
   if (hit) {
     let o = hit.object
@@ -433,12 +470,13 @@ controls.onClick = (e) => {
 }
 
 // A handle for tests and the console: ?debug
-if (params.has('debug')) window.exo = { barLife, sitDown, standUp, others, mist, vcpu, worker, car, life, show, mind, face, give, avatar, controls, bar, floor, abode, portal, camera, renderer, ledger, presence, chipFrame, cafe, get side() { return side }, get tick() { return tick } }
+if (params.has('debug')) window.exo = { terminals, setView, barLife, sitDown, standUp, others, mist, vcpu, worker, car, life, show, mind, face, give, avatar, controls, bar, floor, abode, portal, camera, renderer, ledger, presence, chipFrame, cafe, get side() { return side }, get tick() { return tick } }
 if (window.exo) window.exo.jukebox = jukebox
 
 // --- Loop ---
 const clock = new THREE.Clock()
 let lastPublish = 0, lastHud = 0, greeted = false
+let promptText = null, promptSince = 0
 const prevPos = new THREE.Vector3()
 const fwd = new THREE.Vector3(), right = new THREE.Vector3()
 
@@ -492,7 +530,9 @@ function frame() {
     avatar.look.yaw = THREE.MathUtils.clamp(wrapAngle(controls.yaw - (heading - Math.PI)), -1.3, 1.3)
     avatar.look.pitch = THREE.MathUtils.clamp(controls.pitch - 0.08, -0.5, 0.9)
   }
-  barLife.update(dt, now, seatedOthers())
+  const sitting = seatedOthers()
+  barLife.update(dt, now, sitting)
+  terminals.update(dt, (s) => barLife.terminal(s, sitting.find((o) => o.seat === s)?.name), { tab: barLife.tab, receipts: mist.mine }, now)
   if (riding) {
     car.group.updateMatrixWorld()
     car.deckPoint(pos)
@@ -557,8 +597,13 @@ function frame() {
   const nearCar = side === 0 && pos.distanceTo(car.group.position) < 4.5
   const nearSeat = side === 0 && !seatedNow && !riding && barLife.freeSeatNear(pos, takenSeats()) >= 0
   const prompt = riding ? 'E · step off the Art Car' : seatedNow ? 'E · stand up' : nearSeat ? 'E · sit' : nearCar ? 'E · ride the Art Car' : gate.near ? 'E · jack into NetMap' : null
-  $('prompt').hidden = !entered || !prompt
+  // The prompt shows in the middle for a few seconds, then docks in the panel.
+  if (prompt !== promptText) { promptText = prompt; promptSince = now }
+  const centred = entered && prompt && now - promptSince < 3
+  $('prompt').hidden = !centred
   if (prompt) $('prompt').textContent = prompt
+  $('keyhint').hidden = !entered || !prompt || centred
+  if (prompt) $('keyhint').textContent = prompt
   for (const c of coins) c.userData.setLit(mist.get(c.userData.job).state === 'donated')
   coins.forEach((c, i) => { c.position.y = coinY[i] + Math.sin(now * 2 + i) * 0.08; c.rotation.y = now })
 
@@ -570,6 +615,8 @@ function frame() {
   if (now - lastPublish > 0.1) {
     lastPublish = now
     presence.sweep()
+    barLife.setRemote([...presence.peers.values()].filter((p) => p.state.scene === 'world' && p.state.drink)
+      .map((p) => ({ ...p.state.drink, who: p.state.name })))
     for (const [id, p] of presence.peers) {
       const a = others.get(id)
       if (!a) continue
@@ -594,6 +641,7 @@ function frame() {
         name: me.name, hue: me.hue, tier: avatar.tier, shares: sharing, scene: side ? 'abode' : 'world',
         p: pos.toArray(), yaw: heading, head: avatar.headAim.toArray().slice(0, 3),
         seat: barLife.seat, look: seatedNow ? [avatar.look.yaw, avatar.look.pitch] : null,
+        drink: barLife.openDrink(),
         arms: [avatar.armAim.L, avatar.armAim.R],
         // Hands in 2 mm steps: 63 small integers each.
         hands: [avatar.handAim.L, avatar.handAim.R].map((h) => h && h.map((v) => Math.round(v * 500))),
@@ -605,7 +653,8 @@ function frame() {
   // Camera: first person on a stool (until you zoom out); otherwise orbit
   // the avatar's head, out past the die when zoomed far.
   const unit = unitOf(side)
-  const fpv = seatedNow && controls.dist < 1.2
+  const fpv = view[viewKey()] === 'first' && !riding
+  if (fpv && !seatedNow && entered) heading = controls.yaw + Math.PI // walking in first person: face where you look
   avatar.parts.head.pivot.visible = !fpv
   if (avatar.label) avatar.label.visible = !fpv
   if (fpv) {

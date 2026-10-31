@@ -17,6 +17,7 @@ import { Bartender } from '../npc/bartender.js'
 export function makeBarLife({ bar, avatar, mist, me, say, note, respond }) {
   const state = new BarState(bar)
   const glasses = {} // seat → { glass, drink }
+  let remote = {} // seat → { drink, level, who }: other visitors' open drinks, from presence
   let seat = null
   let lastGiven = mist.get('max').given
   let saveAt = 0, offered = false, greeted = false
@@ -41,6 +42,12 @@ export function makeBarLife({ bar, avatar, mist, me, say, note, respond }) {
 
   function mine(s) { return state.glasses[s]?.by === me.name && state.level(s) > 0 }
 
+  /** The stool where you have an unfinished drink (your open tab), or null. */
+  function openSeat() {
+    for (const s of Object.keys(state.glasses)) if (mine(Number(s))) return Number(s)
+    return null
+  }
+
   function startDrinking() {
     if (mist.budget === 0) {
       mist.setBudget(0.25)
@@ -60,11 +67,14 @@ export function makeBarLife({ bar, avatar, mist, me, say, note, respond }) {
     state, bartender, DRINKS,
     get seat() { return seat },
 
-    /** The nearest free stool within reach of a bar-space point, or -1. */
+    /**
+     * The nearest free stool within reach of a bar-space point, or -1. A
+     * stool with someone else's unfinished drink is theirs until it's done.
+     */
     freeSeatNear(p, taken) {
       let best = -1, bd = 1.3
       for (const s of bar.seats) {
-        if (taken.has(s.index)) continue
+        if (taken.has(s.index) || remote[s.index]) continue
         const d = Math.hypot(p.x - s.x, p.z - s.z)
         if (d < bd) { bd = d; best = s.index }
       }
@@ -153,8 +163,37 @@ export function makeBarLife({ bar, avatar, mist, me, say, note, respond }) {
           if (!offered) { offered = true; say(`That's the bottom of the glass. Another ${drinkById(state.glasses[seat].drink).name}?`) }
         }
       }
-      for (const [s, g] of Object.entries(glasses)) g.glass.setLevel(state.level(Number(s)))
+      for (const [s, g] of Object.entries(glasses)) if (!g.remote) g.glass.setLevel(state.level(Number(s)))
       if (time > saveAt) { saveAt = time + 5; state.save() }
+    },
+
+    /** Your open drink, for presence: { seat, drink, level }, or null. */
+    openDrink() {
+      const s = openSeat()
+      return s === null ? null : { seat: s, drink: state.glasses[s].drink, level: +state.level(s).toFixed(3) }
+    },
+
+    /** Other visitors' open drinks, from presence: [{ seat, drink, level, who }]. */
+    setRemote(list) {
+      const next = {}
+      for (const d of list) if (d && drinkById(d.drink) && !(state.glasses[d.seat] && mine(d.seat))) next[d.seat] = d
+      // Their glasses on the counter, kept in step with what they publish.
+      for (const s of Object.keys(remote)) if (!next[s] && glasses[s] && !state.glasses[s]) { bar.group.remove(glasses[s].glass.group); delete glasses[s] }
+      for (const [s, d] of Object.entries(next)) {
+        if (!glasses[s] || glasses[s].drink.id !== d.drink || glasses[s].remote !== true) { placeGlass(Number(s), drinkById(d.drink)); glasses[s].remote = true }
+        glasses[s].glass.setLevel(d.level)
+      }
+      remote = next
+    },
+
+    /** What a stool's terminal shows: up while someone sits or a drink is open there. */
+    terminal(s, occupiedBy) {
+      const mineHere = s === seat || s === openSeat()
+      const r = remote[s]
+      const g = state.glasses[s]
+      const glass = mineHere && g ? { name: drinkById(g.drink).name, level: state.level(s) }
+        : r ? { name: drinkById(r.drink).name, level: r.level } : null
+      return { up: mineHere || !!r || !!occupiedBy, mine: mineHere, who: r?.who ?? occupiedBy, glass }
     },
 
     /** The tab: drinks and the cycles they were paid with. */

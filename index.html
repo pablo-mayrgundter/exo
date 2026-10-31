@@ -42,13 +42,15 @@
     <button type="button" id="mist-open" aria-expanded="false" aria-controls="mist"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="4" width="12" height="16" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6 8H3M6 12H3M6 16H3M18 8h3M18 12h3M18 16h3" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="7" r="1.1" fill="currentColor"/></svg> vCPU</button>
     <button type="button" id="share" aria-pressed="true" title="Let people near you see you at your rez">Share rez</button>
     <button type="button" id="mirror" aria-pressed="false">Mirror my face</button>
+    <button type="button" id="viewmode" aria-pressed="false" title="First or third person (V; or scroll)">View · 3rd</button>
+    <button type="button" id="cam" class="cam" aria-pressed="false" title="Your camera is on (show or hide the preview)" hidden>● CAM</button>
   </div>
+  <div id="keyhint" class="keyhint" hidden></div>
   <div id="note" class="value small muted" role="status"></div>
 </section>
 
 <aside id="mist" class="panel mist" aria-label="The vCPU: jobs, system and donated compute" hidden></aside>
 
-<div id="order" class="order" role="group" aria-label="Order a drink" hidden></div>
 <div id="caption" class="caption" role="status" aria-live="polite" hidden></div>
 
 <form id="chat" class="chat" autocomplete="off">

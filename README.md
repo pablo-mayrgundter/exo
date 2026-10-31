@@ -39,11 +39,14 @@ by the community that gathers at [exo.cafe](https://exo.cafe).
   body. Every cycle you donate re-voxelizes you finer, until you're
   smooth. Others see your rez only if you share it with them (on by
   default, for people near you).
-- **Pull up a stool.** E sits you at the bar, in first person: look around
-  and your head, torso and hips follow; your elbows prop you on the
-  counter on the side away from where you look. Order a drink and Max
-  fetches the bottle, pours, and sets it in front of you. A drink is a
-  donation to his mind, and it empties as those cycles are spent.
+- **Pull up a stool.** E sits you at the bar, in first person (or third:
+  the View toggle, V, or scroll): look around and your head, torso and
+  hips follow; your elbows prop you on the counter on the side away from
+  where you look. A POS terminal rises out of the counter with the menu
+  and your tab; order, and Max fetches the bottle, pours, and sets it in
+  front of you. A drink is a donation to his mind, and it empties as
+  those cycles are spent; leave it unfinished and your terminal and your
+  stool wait for you.
 - **Max Pablo tends bar.** He shuffles between the taps, the sink, the
   shelf and the till, splits his time between chores and customers,
   thinks his aphorisms aloud, and in conversation he's

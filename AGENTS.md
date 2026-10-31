@@ -57,6 +57,9 @@ would otherwise rediscover.
   chip from power-on) or a new browser context. `exo.sitDown(i)`,
   `exo.barLife.order(id)` and `exo.barLife.bartender.task` drive and
   read the bar.
+- **Element ids are global.** The canvas is `#view` (and styled full
+  screen); a control named the same quietly becomes the canvas. Check
+  `index.html` before naming a new element.
 - Don't `pkill -f "vite preview"` from a command that itself contains that
   text: it kills its own shell. Run the preview server as a background task.
 - **Colours in shaders are linear.** Hex colours through `THREE.Color` are

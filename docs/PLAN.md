@@ -92,8 +92,13 @@ real computer, a bartender, and other people.*
   - [x] Looking turns the head, with the torso (20%) and hips (10%) following
   - [x] Arms prop you on the counter: looking right, on the left elbow; left, the right; ahead, one, the other or both, shifting; weight shifts on its own now and then
   - [x] Others see you seated, and where you look
+  - [x] First or third person, a toggle in the status panel (V, or scroll), remembered for sitting and walking separately
+  - [x] Key prompts show in the middle for 3 s, then dock in the status panel
 - **S1.7.2** As a visitor, I can order a drink and watch it made. ✅
-  - [x] Four 8-bit cocktails; order from the menu bar or by name ("a Carry Flag please")
+  - [x] Four 8-bit cocktails; order on the stool's POS terminal (tap a row, or 1–4) or by name ("a Carry Flag please")
+  - [x] A terminal rises out of the counter when you sit and sinks when you leave, but stays up while your drink is unfinished: an open tab keeps your spot, and nobody else can take that stool
+  - [x] The terminal shows the menu, your glass, your tab and your latest receipts
+  - [x] Open drinks go out with presence, so everyone sees each other's glasses and terminals
   - [x] Max fetches a bottle of the drink's colour from the back bar, carries it, pours, and puts it back; bottles hold four pours, and he restocks empties at the shelf
   - [x] Orders interrupt his chores and conversation
 - **S1.7.3** As a visitor, my drink is a donation. ✅
@@ -215,6 +220,7 @@ the shape of the net.*
   - [ ] Interest management: only people near you, at a rate that falls with distance
 - **S4.1.3** As a visitor, my mocap reaches others. 🔜
   - [x] Arms: MediaPipe Pose aims each arm shoulder to wrist; raise your hands and the avatar does; arm directions go out with presence
+  - [x] While the camera's on, a CAM light in the status panel; the video preview is hidden unless you ask for it
   - [ ] Send head pose and ~50 blendshape weights, not landmarks (a few hundred bytes a frame)
   - [ ] Draw the visor from blendshapes, so the face survives the network
   - [ ] Elbows: split the arm in two and use the elbow landmark
