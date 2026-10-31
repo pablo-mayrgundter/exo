@@ -74,12 +74,46 @@ real computer, a bartender, and other people.*
 
 ### E1.3 Max Pablo, bartender ✅ / 🔜
 - **S1.3.1** As a visitor, I'm greeted and get the lay of the land. ✅
-  - [x] Max greets you on approach, and says the odd line about what you're seeing
-- **S1.3.2** As a visitor, I can talk with Max. 🔜
-  - [ ] Max answers questions about the place (an LLM with the docs as context, rate-limited, opt-in)
-  - [ ] Max mixes a drink: a visual tied to what the chip is doing
-- **S1.3.3** As Pablo, I can tend bar as Max myself. 💭 (T3, T5)
-  - [ ] Pablo's mocap drives Max when he's online
+  - [x] Max greets you on approach; regulars by name, with "your usual?"
+- **S1.3.2** As a visitor, I can talk with Max. ✅ (ELIZA, for now)
+  - [x] ELIZA after Weizenbaum's DOCTOR and Emacs `doctor.el` (`npc/eliza.js`), with a bartender's script (`npc/max-script.js`): the bar, the menu, the Mist, the chip; a plain crisis-line answer to self-harm phrases
+  - [x] What you tell him ("my …") comes back later, across visits
+  - [x] Subtitles while seated, since his bubble is above a first-person frame
+  - [ ] An AI Max, opt-in and rate-limited, with the docs as context
+- **S1.3.3** As a visitor, I see Max work the bar. ✅
+  - [x] He shuffles between stations (taps, sink, shelf, till) and leans in to each
+  - [x] With customers he splits his time between chores and conversation; spells are longer with a drink in front of you
+  - [x] Not in a conversation, he thinks aloud: his aphorisms, one per thought of his job on the vCPU
+- **S1.3.4** As Pablo, I can tend bar as Max myself. 💭 (T3, T5)
+
+### E1.7 Stools and drinks ✅ / 🔜 (T1, T3, T8)
+- **S1.7.1** As a visitor, I can sit at the bar. ✅
+  - [x] E on a stool, E to stand; first person while seated (zoom out for third)
+  - [x] Looking turns the head, with the torso (20%) and hips (10%) following
+  - [x] In third person the look follows the camera's view, except within 45° of the front, where the avatar looks ahead so you can see its face; a tracked neck (*Mirror my face*) turns the head on top of either
+  - [x] Arms prop you on the counter: looking right, on the left elbow; left, the right; ahead, one, the other or both, shifting; weight shifts on its own now and then
+  - [x] Others see you seated, and where you look
+  - [x] First or third person, a toggle in the status panel (V, or scroll), remembered for sitting and walking separately
+  - [x] Key prompts show in the middle for 3 s, then dock in the status panel
+- **S1.7.2** As a visitor, I can order a drink and watch it made. ✅
+  - [x] Four 8-bit cocktails; order on the stool's POS terminal (tap a row, or 1–4) or by name ("a Carry Flag please")
+  - [x] A terminal rises out of the counter when you sit and sinks when you leave, but stays up while your drink is unfinished: an open tab keeps your spot, and nobody else can take that stool
+  - [x] The terminal shows the menu, your glass, your tab and your latest receipts
+  - [x] Open drinks go out with presence, so everyone sees each other's glasses and terminals
+  - [x] Max fetches a bottle of the drink's colour from the back bar, carries it, pours, and puts it back; bottles hold four pours, and he restocks empties at the shelf
+  - [x] Glasses rez in on a pad on the counter's back edge: Max waits there for one, carries it with the bottle, and sets it down before he pours
+  - [x] Empties he clears once they've stood a while (or before pouring another at that stool), and de-rezzes them on the pad
+  - [x] Orders interrupt his chores and conversation
+- **S1.7.3** As a visitor, my drink is a donation. ✅
+  - [x] A drink is drunk a sip at a time, by clicking your glass: you reach for it, raise it, tip it and drink a sixth of it (a drink holds ≈200k half-cycles); what you drank goes on your tab, and your budget goes to Max's mind until the tab is paid (about 20 s a sip at a quarter of a core); untouched, nothing is drunk or donated
+  - [ ] Others see you raise your glass (send the sip with presence)
+  - [x] Elbows: arms in two with two-bone IK, so a glass reaches the mouth; mocap bends them when the pose sees the elbow
+  - [x] Your tab counts drinks and cycles; an empty glass gets "another?", and shorter conversations
+  - [ ] Drinks for others: buy a round (a donation in their name)
+- **S1.7.4** As a regular, the bar remembers. ✅ (in this browser)
+  - [x] Glasses on the counter, bottle levels, your tab and Max's memory of you in localStorage
+  - [x] The vCPU itself, saved to OPFS every 20 s and on leaving, resumes exactly (Life carries on from its generation)
+  - [ ] Shared bar state for everyone in the room (with E2.2 and E4.1)
 
 ### E1.4 More streets and buildings 💭 (T1, T2)
 - **S1.4.1** As a builder, I can put up a building on a pad.
@@ -191,6 +225,7 @@ the shape of the net.*
   - [ ] Interest management: only people near you, at a rate that falls with distance
 - **S4.1.3** As a visitor, my mocap reaches others. 🔜
   - [x] Arms: MediaPipe Pose aims each arm shoulder to wrist; raise your hands and the avatar does; arm directions go out with presence
+  - [x] While the camera's on, a CAM light in the status panel; the video preview is hidden unless you ask for it
   - [ ] Send head pose and ~50 blendshape weights, not landmarks (a few hundred bytes a frame)
   - [ ] Draw the visor from blendshapes, so the face survives the network
   - [ ] Elbows: split the arm in two and use the elbow landmark

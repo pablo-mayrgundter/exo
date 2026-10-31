@@ -70,6 +70,8 @@ export class Controls {
   }
 
   zoom(f) {
+    // A hook first: main.js switches between first and third person on it.
+    if (this.onZoom?.(f) === false) return
     this.dist = THREE.MathUtils.clamp(this.dist * f, this.minDist, this.maxDist)
     // Look further down as you rise, so zooming out ends over the die.
     if (this.dist > 40) this.pitch = Math.max(this.pitch, Math.min(1.45, 0.32 + Math.log(this.dist / 40) * 0.45))

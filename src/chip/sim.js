@@ -253,6 +253,29 @@ export class Chip6502 {
     }
   }
 
+  /**
+   * Everything the chip needs to carry on exactly where it is: node levels,
+   * pull-ups and pull-downs (inputs the host drives), transistors, RAM and
+   * the half-cycle count. `restore` on a chip built from the same netlist
+   * resumes it bit for bit.
+   */
+  snapshot() {
+    return {
+      state: this.state.slice(), pullup: this.pullup.slice(), pulldown: this.pulldown.slice(),
+      tOn: this.tOn.slice(), memory: this.memory.slice(), halfCycles: this.halfCycles,
+    }
+  }
+
+  restore(s) {
+    if (s.state.length !== this.state.length || s.tOn.length !== this.tOn.length) throw new Error('snapshot is from another netlist')
+    this.state.set(s.state)
+    this.pullup.set(s.pullup)
+    this.pulldown.set(s.pulldown)
+    this.tOn.set(s.tOn)
+    this.memory.set(s.memory)
+    this.halfCycles = s.halfCycles
+  }
+
   /** visual6502's stateString(): one char per node, for comparing runs. */
   stateString() {
     let s = ''
