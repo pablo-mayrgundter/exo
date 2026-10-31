@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Exo Cafe</title>
+<meta name="description" content="A Tron bar on the NMI pad of a running 6502. The first instance of Cloud City, by Freality Metaverse Construction.">
+<meta name="theme-color" content="#050A1F">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600&family=Michroma&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <script type="module" crossorigin src="./assets/index-BWhDUww1.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-CXNN5lYh.css">
+</head>
+<body>
+<canvas id="view" aria-label="Exo Cafe, a 3D scene"></canvas>
+
+<nav class="bar top" aria-label="Site">
+  <div class="brand"><span class="hi">Exo Cafe</span><span aria-hidden="true">//</span><span>Cloud City 01</span></div>
+  <div class="links">
+    <button type="button" data-open="menu">Menu</button>
+    <a href="https://github.com/pablo-mayrgundter/exo/blob/main/docs/PLAN.md" target="_blank" rel="noopener">Plan</a>
+    <a href="https://pablo-mayrgundter.github.io/netmap/" target="_blank" rel="noopener">NetMap</a>
+    <a href="https://github.com/pablo-mayrgundter/exo" target="_blank" rel="noopener">Source</a>
+  </div>
+</nav>
+
+<section class="panel where" aria-label="Location and chip">
+  <div class="label">Location</div>
+  <div id="where" class="value">Exo Cafe · NMI pad</div>
+  <div class="label">Chip · MOS 6502 rev D</div>
+  <div id="chip" class="value small">booting…</div>
+  <div class="label">Frames</div>
+  <div id="frames" class="value small">—</div>
+</section>
+
+<section class="panel you" aria-label="You">
+  <div class="label">You</div>
+  <div class="value"><span id="name">—</span> · <span id="tier">GUEST</span></div>
+  <div class="meter" aria-hidden="true"><div id="rez"></div></div>
+  <div id="alloc" class="value small">—</div>
+  <div class="buttons">
+    <button type="button" id="mist-open" aria-expanded="false" aria-controls="mist"><svg class="chip-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="4" width="12" height="16" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6 8H3M6 12H3M6 16H3M18 8h3M18 12h3M18 16h3" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="7" r="1.1" fill="currentColor"/></svg> vCPU</button>
+    <button type="button" id="share" aria-pressed="true" title="Let people near you see you at your rez">Share rez</button>
+    <button type="button" id="mirror" aria-pressed="false">Mirror my face</button>
+  </div>
+  <div id="note" class="value small muted" role="status"></div>
+</section>
+
+<aside id="mist" class="panel mist" aria-label="The vCPU: jobs, system and donated compute" hidden></aside>
+
+<form id="chat" class="chat" autocomplete="off">
+  <input id="say" type="text" maxlength="160" placeholder="Say something  (Enter)" aria-label="Say something">
+</form>
+<div id="prompt" class="prompt" hidden></div>
+<video id="selfie" class="selfie" muted playsinline hidden></video>
+<div id="hint" class="hint">WASD walk · Shift run · drag look · wheel zoom out to see the die · click the Life wall to poke RAM · tap a chip token to donate cycles · J jukebox · N next track · M mute</div>
+
+<div id="intro" class="overlay">
+  <div class="card">
+    <div class="kicker">Freality Metaverse Construction · Cloud City 01</div>
+    <h1>Exo Cafe</h1>
+    <p>A bar on the NMI pad of a running 6502. The street outside is the chip's wiring, simulated transistor by transistor; the lights inside follow its buses, and the wall behind the bar is the Game of Life in its RAM.</p>
+    <p class="muted">Guests rez in voxels. Donate spare cycles to the jobs running on the bar's CPU (tap their chip tokens) and you sharpen up. Turn on your camera and your avatar wears your face and moves its arms with yours; the video never leaves your browser.</p>
+    <label>Handle <input id="handle" type="text" maxlength="24" autocomplete="nickname"></label>
+    <button type="button" id="enter" class="primary">Enter</button>
+  </div>
+</div>
+
+<div id="menu" class="overlay" hidden>
+  <div class="card wide">
+    <div class="kicker">Menu</div>
+    <h2>The fever dream</h2>
+    <pre id="manifesto"></pre>
+    <h2>Mist computing</h2>
+    <ul id="mist"></ul>
+    <p class="muted">Chip layout and netlist from <a href="http://www.visual6502.org/" target="_blank" rel="noopener">visual6502.org</a> (Greg James, Brian Silverman, Barry Silverman; CC BY-NC-SA 3.0). Simulator after their MIT-licensed chipsim.</p>
+    <button type="button" data-close="menu" class="primary">Back to the bar</button>
+  </div>
+</div>
+</body>
+</html>
