@@ -74,12 +74,36 @@ real computer, a bartender, and other people.*
 
 ### E1.3 Max Pablo, bartender ✅ / 🔜
 - **S1.3.1** As a visitor, I'm greeted and get the lay of the land. ✅
-  - [x] Max greets you on approach, and says the odd line about what you're seeing
-- **S1.3.2** As a visitor, I can talk with Max. 🔜
-  - [ ] Max answers questions about the place (an LLM with the docs as context, rate-limited, opt-in)
-  - [ ] Max mixes a drink: a visual tied to what the chip is doing
-- **S1.3.3** As Pablo, I can tend bar as Max myself. 💭 (T3, T5)
-  - [ ] Pablo's mocap drives Max when he's online
+  - [x] Max greets you on approach; regulars by name, with "your usual?"
+- **S1.3.2** As a visitor, I can talk with Max. ✅ (ELIZA, for now)
+  - [x] ELIZA after Weizenbaum's DOCTOR and Emacs `doctor.el` (`npc/eliza.js`), with a bartender's script (`npc/max-script.js`): the bar, the menu, the Mist, the chip; a plain crisis-line answer to self-harm phrases
+  - [x] What you tell him ("my …") comes back later, across visits
+  - [x] Subtitles while seated, since his bubble is above a first-person frame
+  - [ ] An AI Max, opt-in and rate-limited, with the docs as context
+- **S1.3.3** As a visitor, I see Max work the bar. ✅
+  - [x] He shuffles between stations (taps, sink, shelf, till) and leans in to each
+  - [x] With customers he splits his time between chores and conversation; spells are longer with a drink in front of you
+  - [x] Not in a conversation, he thinks aloud: his aphorisms, one per thought of his job on the vCPU
+- **S1.3.4** As Pablo, I can tend bar as Max myself. 💭 (T3, T5)
+
+### E1.7 Stools and drinks ✅ / 🔜 (T1, T3, T8)
+- **S1.7.1** As a visitor, I can sit at the bar. ✅
+  - [x] E on a stool, E to stand; first person while seated (zoom out for third)
+  - [x] Looking turns the head, with the torso (20%) and hips (10%) following
+  - [x] Arms prop you on the counter: looking right, on the left elbow; left, the right; ahead, one, the other or both, shifting; weight shifts on its own now and then
+  - [x] Others see you seated, and where you look
+- **S1.7.2** As a visitor, I can order a drink and watch it made. ✅
+  - [x] Four 8-bit cocktails; order from the menu bar or by name ("a Carry Flag please")
+  - [x] Max fetches a bottle of the drink's colour from the back bar, carries it, pours, and puts it back; bottles hold four pours, and he restocks empties at the shelf
+  - [x] Orders interrupt his chores and conversation
+- **S1.7.3** As a visitor, my drink is a donation. ✅
+  - [x] A drink on the bar donates to Max's mind; it empties as those cycles are spent (≈200k half-cycles); your tab counts drinks and cycles
+  - [x] You sip now and then; an empty glass gets "another?", and shorter conversations
+  - [ ] Drinks for others: buy a round (a donation in their name)
+- **S1.7.4** As a regular, the bar remembers. ✅ (in this browser)
+  - [x] Glasses on the counter, bottle levels, your tab and Max's memory of you in localStorage
+  - [x] The vCPU itself, saved to OPFS every 20 s and on leaving, resumes exactly (Life carries on from its generation)
+  - [ ] Shared bar state for everyone in the room (with E2.2 and E4.1)
 
 ### E1.4 More streets and buildings 💭 (T1, T2)
 - **S1.4.1** As a builder, I can put up a building on a pad.

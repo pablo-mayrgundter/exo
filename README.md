@@ -39,6 +39,18 @@ by the community that gathers at [exo.cafe](https://exo.cafe).
   body. Every cycle you donate re-voxelizes you finer, until you're
   smooth. Others see your rez only if you share it with them (on by
   default, for people near you).
+- **Pull up a stool.** E sits you at the bar, in first person: look around
+  and your head, torso and hips follow; your elbows prop you on the
+  counter on the side away from where you look. Order a drink and Max
+  fetches the bottle, pours, and sets it in front of you. A drink is a
+  donation to his mind, and it empties as those cycles are spent.
+- **Max Pablo tends bar.** He shuffles between the taps, the sink, the
+  shelf and the till, splits his time between chores and customers,
+  thinks his aphorisms aloud, and in conversation he's
+  [ELIZA](src/npc/eliza.js) with a bartender's script.
+- **The bar remembers.** Your glass, the bottles, your tab and what you
+  told Max stay in your browser; the vCPU is saved to OPFS and resumes
+  exactly where it left off. `?fresh` starts it from power-on.
 - **The jukebox** in the corner plays 8-bit tracks on an NES-style synth
   in Web Audio: public-domain classics (Korobeiniki, Grieg, Joplin,
   Beethoven, Bach) and originals like the trance anthem *Non-Maskable*.
@@ -101,6 +113,7 @@ until the Synchronizer (Matrix and murmur) replaces it.
 | [src/mist/](src/mist) | the gift economy: scheduler, dashboard, receipts, rez ledger |
 | [src/net/](src/net) | presence, behind a transport interface |
 | [src/audio/](src/audio) | the jukebox: an NES-style synth, a song format, the playlist |
+| [src/npc/](src/npc) | Max: the bartender's state machine, ELIZA and his script |
 | [public/chip/6502.json](public/chip) | the netlist and layout, from `scripts/import-visual6502.mjs` |
 | [docs/](docs) | vision and plan |
 

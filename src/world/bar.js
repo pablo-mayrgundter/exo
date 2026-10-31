@@ -130,6 +130,8 @@ export function makeBar({ names }) {
   const bottleGeo = new THREE.CylinderGeometry(0.07, 0.08, 0.38, 10)
   const palette = [C.cyan, C.magenta, C.yellow, C.green, C.lavender, C.orange, C.amber]
   const bottles = new THREE.InstancedMesh(bottleGeo, basic({ color: 0xffffff }), 3 * 40)
+  // Per bottle: its palette colour and where it stands, so Max can fetch one.
+  const bottleInfo = []
   let bi = 0
   const m4 = new THREE.Matrix4()
   for (let shelf = 0; shelf < 3; shelf++) {
@@ -139,8 +141,11 @@ export function makeBar({ names }) {
     group.add(plank)
     for (let k = 0; k < 40; k++) {
       const x = -4.8 + k * 0.245
-      bottles.setMatrixAt(bi, m4.makeTranslation(x, y, -6.6 + ((k * 7) % 3) * 0.08))
-      bottles.setColorAt(bi, new THREE.Color(palette[(k * 5 + shelf * 3) % palette.length]).multiplyScalar(0.55 + ((k * 13) % 5) * 0.1))
+      const pos = new THREE.Vector3(x, y, -6.6 + ((k * 7) % 3) * 0.08)
+      bottles.setMatrixAt(bi, m4.makeTranslation(pos))
+      const kind = (k * 5 + shelf * 3) % palette.length
+      bottles.setColorAt(bi, new THREE.Color(palette[kind]).multiplyScalar(0.55 + ((k * 13) % 5) * 0.1))
+      bottleInfo.push({ kind, pos, color: palette[kind] })
       bi++
     }
   }
@@ -276,8 +281,22 @@ export function makeBar({ names }) {
   max.group.position.set(0, 0.08, -5.4)
   group.add(max.group)
 
+  // Stools, in bar space: where a seated visitor's hips go, facing the counter.
+  const seats = Array.from({ length: 7 }, (_, k) => ({ index: k, x: -4.5 + k * 1.5, z: -2.9, y: 0.82 }))
+  // Where a glass stands on the counter in front of each stool.
+  const glassAt = (seat) => new THREE.Vector3(seat.x, 1.18, -3.55)
+
   return {
     group, exterior, colliders, portalAnchor, max, life,
+    seats, glassAt, bottles, bottleInfo,
+    /** Max's lane behind the counter, and the chores along it (bar space). */
+    lane: { z: -5.3, x0: -5, x1: 5 },
+    stations: [
+      { name: 'taps', x: -3.4, facing: 0, lean: 0.5 },
+      { name: 'sink', x: -1.0, facing: 0, lean: 0.6 },
+      { name: 'shelf', x: 2.2, facing: Math.PI, lean: 0.15, reach: true },
+      { name: 'till', x: 4.3, facing: 0, lean: 0.35 },
+    ],
     /** True if a bar-space point is inside the walls. */
     contains(x, z) { return Math.abs(x) < hw && Math.abs(z) < hd },
     isAlive(i) { return lifeAlive[i] === 1 },
@@ -309,7 +328,7 @@ export function makeBar({ names }) {
       life.instanceColor.needsUpdate = true
       scrollY += dt * 0.6
       if (Math.floor(scrollY) !== Math.floor(scrollY - dt * 0.6)) paintManifesto()
-      max.update(dt, { time })
+
     },
     /** Redraws the CPU readout and the Life caption (a few times a second). */
     paintReadouts(tick, chipRate, powered = '') {

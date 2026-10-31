@@ -140,6 +140,9 @@ export function makeTimer(chip, quantum = QUANTUM) {
     ack() {
       if (raised) { chip.setHigh('irq'); raised = false }
     },
+    /** For snapshots: where the timer is in its count, and the IRQ line. */
+    get state() { return { count, raised } },
+    set state(s) { count = s.count; raised = s.raised },
   }
 }
 

@@ -23,6 +23,9 @@ import { Ledger, allocation } from './mist/ledger.js'
 import { Mist, Job } from './mist/scheduler.js'
 import { makeMistPanel, makeChipToken } from './mist/panel.js'
 import { makeArtCar } from './world/artcar.js'
+import { makeBarLife } from './world/barlife.js'
+import { makeEliza } from './npc/eliza.js'
+import { MAX_SCRIPT } from './npc/max-script.js'
 import { makeJukebox } from './world/jukebox.js'
 import { Presence, BroadcastTransport } from './net/presence.js'
 import { Controls } from './controls.js'
@@ -108,8 +111,15 @@ worker.addEventListener('message', (e) => {
   console.error('The vCPU halted and was reset:', e.data.message)
   note('The vCPU crashed and was power-cycled.')
 })
+worker.addEventListener('message', (e) => {
+  if (e.data.type !== 'resumed') return
+  const ago = Math.round((Date.now() - e.data.saved) / 60000)
+  note(`The vCPU picked up where it left off ${ago < 1 ? 'moments' : ago < 120 ? `${ago} min` : `${Math.round(ago / 60)} h`} ago, at ${(e.data.halfCycles / 2e6).toFixed(2)} M cycles.`)
+})
+// Save the chip when the page goes away (it also saves every 20 s).
+addEventListener('pagehide', () => { worker.postMessage({ type: 'save' }); barLife?.state.save() })
 worker.postMessage({
-  type: 'init', data, program: vcpu.bytes, levels: true,
+  type: 'init', data, program: vcpu.bytes, levels: true, persist: params.get('fresh') === null,
   jobs: [
     { id: 'life', frameAddr: LIFE_ZP.gen, watch: { from: BOARD.a, to: BOARD.b + 256, size: 256 },
       pingpong: { ptr: LIFE_ZP.src + 1, pages: [BOARD.a >> 8, BOARD.b >> 8] } },
@@ -142,7 +152,7 @@ show.onMessage((m) => {
 })
 // Max speaks when his mind finishes a thought, if you're near enough to hear.
 mind.onMessage((m) => {
-  if (m.type !== 'receipt' || !entered || side !== 0) return
+  if (m.type !== 'receipt' || !entered || side !== 0 || !barLife.idle) return
   if (avatar.group.position.distanceTo(bar.max.group.position) > 9) return
   maxSays(MAX.thoughts[m.outputBoard[0] % MAX.thoughts.length])
 })
@@ -153,6 +163,17 @@ avatar.group.position.set(0, 0.08, 1)
 avatar.group.rotation.y = Math.PI
 world.add(avatar.group)
 let heading = Math.PI // the avatar's facing, radians about +y; π faces -z (the counter)
+// The stools, drinks and Max's tending (world/barlife.js). In conversation
+// Max is ELIZA with a bartender's script (npc/eliza.js, npc/max-script.js).
+const eliza = makeEliza(MAX_SCRIPT)
+const respond = (text) => eliza.respond(text)
+const barLife = makeBarLife({ bar, avatar, mist, me, say: (t) => maxSays(t), note: (t) => note(t), respond: (t) => respond(t) })
+// What you told Max last time ("my ..." lines) comes back in conversation.
+{
+  const regular = barLife.state.regular(me.name)
+  eliza.memory.push(...regular.memory)
+  regular.memory = eliza.memory
+}
 const controls = new Controls(canvas)
 controls.yaw = 0
 const face = new FaceTracker()
@@ -213,6 +234,14 @@ function enter() {
   setTimeout(() => { $('hint').style.opacity = '0' }, 12000)
 }
 
+// The menu, while you're on a stool.
+$('order').innerHTML = '<span class="label">Order</span>' + barLife.DRINKS.map((d) =>
+  `<button type="button" data-drink="${d.id}" style="--c:#${new THREE.Color(d.color).getHexString()}">${d.name}</button>`).join('')
+$('order').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-drink]')
+  if (b) barLife.order(b.dataset.drink)
+})
+
 // The Mist: a dashboard, and $ coins on the things you can give to.
 const mistPanel = makeMistPanel(mist, $('mist'))
 $('mist-open').addEventListener('click', () => toggleMist())
@@ -224,7 +253,7 @@ function toggleMist(open = $('mist').hidden) {
 }
 // Chip tokens: tap one to donate cycles to that job.
 const coins = [makeChipToken('life'), makeChipToken('show', '#e35bde'), makeChipToken('max', '#ff7a5c')]
-coins[0].position.set(2.95, 5.3, -6.75) // beside the Life wall
+coins[0].position.set(3.1, 6.9, -6.75) // beside the Life wall's top corner, clear of its caption
 bar.group.add(coins[0])
 coins[1].position.set(0, 4.1, 0) // over the car's arch
 car.group.children[0].add(coins[1])
@@ -290,6 +319,8 @@ $('chat').addEventListener('submit', (e) => {
   $('say').blur()
   avatar.say(text)
   presence.say(text)
+  // At a stool, Max listens: orders, the menu, or conversation.
+  if (barLife.hear(text, clock.elapsedTime)) return
   if (/\bmax\b|drink|bar|hello|hi\b/i.test(text)) setTimeout(() => maxSays(pick(MAX.thoughts)), 1200)
 })
 addEventListener('keydown', (e) => {
@@ -303,17 +334,66 @@ addEventListener('keydown', (e) => {
 function note(text) { $('note').textContent = text }
 function pick(a) { return a[Math.floor(Math.random() * a.length)] }
 let lastMax = 0
-function maxSays(text) { bar.max.say(text, 8); lastMax = performance.now() }
+let captionTimer = 0
+function maxSays(text) {
+  bar.max.say(text, 8)
+  lastMax = performance.now()
+  // On a stool, in first person, his bubble is above the frame: subtitle it.
+  if (barLife?.seat == null) return
+  const c = $('caption')
+  c.innerHTML = '<b>MAX PABLO</b> '
+  c.append(text)
+  c.hidden = false
+  clearTimeout(captionTimer)
+  captionTimer = setTimeout(() => { c.hidden = true }, 9000)
+}
 
 /** E: the nearest thing that does something. */
 function interact() {
   if (!entered) return
   if (riding) { alight(); return }
   if (side !== 0) return
+  if (barLife.seat !== null) { standUp(); return }
   const p = avatar.group.position
+  const free = barLife.freeSeatNear(p, takenSeats())
+  if (free >= 0) { sitDown(free); return }
   if (p.distanceTo(car.group.position) < 4.5) { board(); return }
   if (gate.near) { openNetMap(); return }
   if (p.distanceTo(bar.max.group.position) < 7) give('max')
+}
+/** Remote visitors sitting at the bar. */
+function seatedOthers() {
+  const out = []
+  for (const [, peer] of presence.peers) if (peer.state.scene === 'world' && peer.state.seat != null) out.push({ seat: peer.state.seat, name: peer.state.name })
+  return out
+}
+/** Stools other visitors are on. */
+function takenSeats() {
+  const t = new Set()
+  for (const [, peer] of presence.peers) if (peer.state.scene === 'world' && peer.state.seat != null) t.add(peer.state.seat)
+  return t
+}
+let standDist = 6
+function sitDown(i) {
+  barLife.sit(i)
+  heading = Math.PI // facing the counter
+  standDist = controls.dist
+  controls.minDist = 0.3
+  controls.dist = 0.3 // first person; zoom out for the third
+  controls.yaw = 0
+  controls.pitch = 0.08
+  $('order').hidden = false
+  note('Seated. Look around with the mouse; order from the menu or just ask Max. E to stand.')
+}
+function standUp() {
+  const s = bar.seats[barLife.seat]
+  barLife.stand()
+  avatar.group.position.set(s.x, 0.08, s.z + 1)
+  controls.minDist = 2.2
+  controls.dist = Math.max(standDist, 4)
+  controls.pitch = 0.3
+  $('order').hidden = true
+  $('caption').hidden = true
 }
 function board() {
   riding = true
@@ -353,7 +433,7 @@ controls.onClick = (e) => {
 }
 
 // A handle for tests and the console: ?debug
-if (params.has('debug')) window.exo = { others, mist, vcpu, worker, car, life, show, mind, face, give, avatar, controls, bar, floor, abode, portal, camera, renderer, ledger, presence, chipFrame, cafe, get side() { return side }, get tick() { return tick } }
+if (params.has('debug')) window.exo = { barLife, sitDown, standUp, others, mist, vcpu, worker, car, life, show, mind, face, give, avatar, controls, bar, floor, abode, portal, camera, renderer, ledger, presence, chipFrame, cafe, get side() { return side }, get tick() { return tick } }
 if (window.exo) window.exo.jukebox = jukebox
 
 // --- Loop ---
@@ -396,7 +476,8 @@ function frame() {
 
   // Walk, relative to where the camera looks. Faster when zoomed out:
   // you're flying over the die then, not strolling.
-  const inp = entered && !riding ? controls.input() : { x: 0, f: 0, run: false }
+  const seatedNow = barLife.seat !== null
+  const inp = entered && !riding && !seatedNow ? controls.input() : { x: 0, f: 0, run: false }
   fwd.set(-Math.sin(controls.yaw), 0, -Math.cos(controls.yaw))
   right.set(-fwd.z, 0, fwd.x)
   const speed = (inp.run ? 8 : 3.2) * Math.max(1, controls.dist / 25)
@@ -404,8 +485,14 @@ function frame() {
   const pos = avatar.group.position
   prevPos.copy(pos)
   pos.addScaledVector(vel, dt)
-  collide(pos, side === 0 ? bar.colliders : abode.colliders)
+  if (!seatedNow) collide(pos, side === 0 ? bar.colliders : abode.colliders)
   car.update(dt)
+  if (seatedNow) {
+    // Looking around from the stool: the head turns, the body follows a little.
+    avatar.look.yaw = THREE.MathUtils.clamp(wrapAngle(controls.yaw - (heading - Math.PI)), -1.3, 1.3)
+    avatar.look.pitch = THREE.MathUtils.clamp(controls.pitch - 0.08, -0.5, 0.9)
+  }
+  barLife.update(dt, now, seatedOthers())
   if (riding) {
     car.group.updateMatrixWorld()
     car.deckPoint(pos)
@@ -468,7 +555,8 @@ function frame() {
   abode.update(abodeFrame.time, now)
   gate.update(now, side === 0 ? pos : null)
   const nearCar = side === 0 && pos.distanceTo(car.group.position) < 4.5
-  const prompt = riding ? 'E · step off the Art Car' : nearCar ? 'E · ride the Art Car' : gate.near ? 'E · jack into NetMap' : null
+  const nearSeat = side === 0 && !seatedNow && !riding && barLife.freeSeatNear(pos, takenSeats()) >= 0
+  const prompt = riding ? 'E · step off the Art Car' : seatedNow ? 'E · stand up' : nearSeat ? 'E · sit' : nearCar ? 'E · ride the Art Car' : gate.near ? 'E · jack into NetMap' : null
   $('prompt').hidden = !entered || !prompt
   if (prompt) $('prompt').textContent = prompt
   for (const c of coins) c.userData.setLit(mist.get(c.userData.job).state === 'donated')
@@ -490,6 +578,9 @@ function frame() {
       if (a.group.parent !== want) want.add(a.group)
       a.group.position.lerp(new THREE.Vector3(...s.p), 0.5)
       a.group.rotation.y = s.yaw
+      if (s.seat != null && !a.seated) a.sit()
+      if (s.seat == null && a.seated) a.stand()
+      if (s.look) { a.look.yaw = s.look[0]; a.look.pitch = s.look[1] }
       a.headAim.set(...s.head)
       a.armAim.L = s.arms?.[0] ?? null
       a.armAim.R = s.arms?.[1] ?? null
@@ -502,6 +593,7 @@ function frame() {
       presence.publish({
         name: me.name, hue: me.hue, tier: avatar.tier, shares: sharing, scene: side ? 'abode' : 'world',
         p: pos.toArray(), yaw: heading, head: avatar.headAim.toArray().slice(0, 3),
+        seat: barLife.seat, look: seatedNow ? [avatar.look.yaw, avatar.look.pitch] : null,
         arms: [avatar.armAim.L, avatar.armAim.R],
         // Hands in 2 mm steps: 63 small integers each.
         hands: [avatar.handAim.L, avatar.handAim.R].map((h) => h && h.map((v) => Math.round(v * 500))),
@@ -510,15 +602,28 @@ function frame() {
   }
   if (now - lastHud > 0.25) { lastHud = now; hud() }
 
-  // Camera: orbit the avatar's head; out past the die when zoomed far.
-  const target = pos.clone().add(new THREE.Vector3(0, 1.5, 0))
-  controls.place(camera, target)
+  // Camera: first person on a stool (until you zoom out); otherwise orbit
+  // the avatar's head, out past the die when zoomed far.
   const unit = unitOf(side)
-  if (unit !== 1) {
-    camera.position.multiplyScalar(unit)
-    camera.lookAt(target.multiplyScalar(unit))
+  const fpv = seatedNow && controls.dist < 1.2
+  avatar.parts.head.pivot.visible = !fpv
+  if (avatar.label) avatar.label.visible = !fpv
+  if (fpv) {
+    avatar.group.updateMatrixWorld(true)
+    const eye = avatar.parts.head.pivot.localToWorld(new THREE.Vector3(0, 0.22, 0.14))
+    const yaw = controls.yaw, pitch = controls.pitch - 0.08
+    const dir = new THREE.Vector3(-Math.sin(yaw) * Math.cos(pitch), -Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch))
+    camera.position.copy(eye)
+    camera.lookAt(eye.clone().addScaledVector(dir, unit))
+  } else {
+    const target = pos.clone().add(new THREE.Vector3(0, seatedNow ? 1.2 : 1.5, 0))
+    controls.place(camera, target)
+    if (unit !== 1) {
+      camera.position.multiplyScalar(unit)
+      camera.lookAt(target.multiplyScalar(unit))
+    }
   }
-  camera.near = 0.05 * unit
+  camera.near = (fpv ? 0.02 : 0.05) * unit
   camera.far = Math.max(600, controls.dist * 4) * unit
   camera.updateProjectionMatrix()
   world.fog.density = (controls.dist > 60 ? 0.00008 : 0.0009) / BODY_UM
@@ -546,7 +651,7 @@ function hud() {
   if (tick) {
     $('chip').textContent = `${(chipHz / 2000).toFixed(2)} kHz (native 1 MHz)\nLife gen ${tick.gen} · cell ${tick.cursor} · ${(tick.regs.halfCycles / 2e6).toFixed(3)} M cycles`
     const r = life.receipts[0]
-    bar.paintReadouts(tick, formatRate(chipFrame.absoluteRate), r?.donor ? `POWERED BY ${r.donor.toUpperCase()}` : 'IMPLICIT')
+    bar.paintReadouts(tick, formatRate(chipFrame.absoluteRate), r?.donor ? `POWERED BY ${r.donor.toUpperCase()}` : 'SYSTEM')
   }
   // Space: you're ~8 µm tall on the die, 1.8 m in the abode. Time: each place's clock.
   const height = side === 0 ? formatLength(1.84 * BODY_UM) : '1.8 m'

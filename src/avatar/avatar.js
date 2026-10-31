@@ -152,6 +152,14 @@ export class Avatar {
     this.armAim = { L: null, R: null }
     /** Tracked hands: 21 points relative to the wrist (avatar space, 63 numbers), or null. */
     this.handAim = { L: null, R: null }
+    /** Arm directions a controller wants (seated, tending bar); tracked arms win. */
+    this.armPose = { L: null, R: null }
+    /** Forward lean of the torso, radians (tending bar, propped on the counter). */
+    this.lean = 0
+    /** Where a seated avatar looks, relative to its seat: yaw (+ = its left), pitch (+ = down). */
+    this.look = { yaw: 0, pitch: 0 }
+    /** Set by sit(): the seated controller's state. */
+    this.seated = null
     /** Face landmarks (normalized, mirrored) to draw on the visor, or null. */
     this.face = null
     this.spawn = 1
@@ -247,9 +255,13 @@ export class Avatar {
     legR.pivot.rotation.x = -s * swing
     armL.pivot.rotation.set(-s * swing * 0.8, 0, 0.08)
     armR.pivot.rotation.set(s * swing * 0.8, 0, -0.08)
-    // Tracked arms override the swing: aim each from its rest direction.
+    this.body.rotation.set(0, 0, 0)
+    this.body.position.set(0, 0, 0)
+    torso.pivot.rotation.set(this.lean, 0, 0)
+    if (this.seated) this.updateSeated(dt, time)
+    // Tracked arms override the swing and any pose: aim each from its rest direction.
     for (const [side, part] of [['L', armL], ['R', armR]]) {
-      const aim = this.armAim[side]
+      const aim = this.armAim[side] ?? this.armPose[side]
       if (!aim) { part.aimed = null; continue }
       const want = ARM_TMP.setFromUnitVectors(REST[side], ARM_V.set(aim[0], aim[1], aim[2]))
       part.aimed = (part.aimed ?? part.pivot.quaternion.clone()).slerp(want, 1 - Math.exp(-dt * 14))
@@ -257,7 +269,7 @@ export class Avatar {
     }
     for (const side of ['L', 'R']) this.poseHand(side, side === 'L' ? armL : armR)
     torso.pivot.position.y = PARTS.torso.pivot[1] + Math.abs(Math.cos(this.phase)) * swing * 0.04 + Math.sin(time * 1.7) * 0.004
-    const k = 1 - Math.exp(-dt * 12)
+    const k = 1 - Math.exp(-dt * (this.seated ? 6 : 12))
     head.pivot.rotation.x += (this.headAim.x - head.pivot.rotation.x) * k
     head.pivot.rotation.y += (this.headAim.y - head.pivot.rotation.y) * k
     head.pivot.rotation.z += (this.headAim.z - head.pivot.rotation.z) * k
@@ -277,6 +289,73 @@ export class Avatar {
       this.bubble = null
     }
     this.drawVisor(time)
+  }
+
+  /**
+   * Sits on a seat: legs down to the footrest, and a seated controller for
+   * the rest. `drink` (set from outside) makes it sip now and then.
+   */
+  sit() {
+    this.seated = {
+      support: 'both', mode: 'both', nextMode: 0,
+      shift: { lean: 0.12, x: 0, tilt: 0 }, want: { lean: 0.12, x: 0, tilt: 0 }, nextShift: 0,
+      drink: false, sipUntil: 0, nextSip: 0, lean: 0.12, x: 0, tilt: 0,
+    }
+  }
+
+  stand() {
+    this.seated = null
+    this.armPose.L = this.armPose.R = null
+  }
+
+  /**
+   * The seated pose. Looking turns the head, with the torso and hips
+   * following a little; the arms prop the body on the counter: looking
+   * right, the left elbow takes the weight, and looking left the right;
+   * looking ahead it shifts between one, the other and both. Every so
+   * often the body shifts its weight on its own.
+   */
+  updateSeated(dt, time) {
+    const st = this.seated
+    const { legL, legR, torso } = this.parts
+    const yaw = THREE.MathUtils.clamp(this.look.yaw, -1.3, 1.3)
+    legL.pivot.rotation.set(-0.62, 0, 0.14)
+    legR.pivot.rotation.set(-0.62, 0, -0.14)
+    // Which arm takes the weight.
+    if (yaw < -0.35) st.support = 'L'
+    else if (yaw > 0.35) st.support = 'R'
+    else {
+      if (time > st.nextMode) {
+        st.mode = ['L', 'R', 'both'][Math.floor(Math.random() * 3)]
+        st.nextMode = time + 6 + Math.random() * 6
+      }
+      st.support = st.mode
+    }
+    // Shifting weight now and then: lean, hips, a slight tilt.
+    if (time > st.nextShift) {
+      st.want = { lean: 0.06 + Math.random() * 0.16, x: (Math.random() - 0.5) * 0.06, tilt: (Math.random() - 0.5) * 0.08 }
+      st.nextShift = time + 7 + Math.random() * 7
+    }
+    const e = 1 - Math.exp(-dt * 1.5)
+    for (const key of ['lean', 'x', 'tilt']) st[key] += (st.want[key] - st[key]) * e
+    // Hips 10% of the look, torso another 20%, the head the rest.
+    this.body.rotation.set(0, yaw * 0.1, st.tilt)
+    this.body.position.x = st.x
+    torso.pivot.rotation.set(st.lean + (st.support === 'both' ? 0.08 : 0), yaw * 0.2, 0)
+    this.headAim.set(this.look.pitch, yaw * 0.7, -st.tilt * 0.5)
+    // Arms: on the counter, or resting; the right hand brings the drink up.
+    const onCounter = { L: [0.1, -0.3, 0.95], R: [-0.1, -0.3, 0.95] }
+    const resting = { L: [0.06, -0.85, 0.5], R: [-0.06, -0.85, 0.5] }
+    if (st.drink && time > st.nextSip) {
+      st.sipUntil = time + 2.2
+      st.nextSip = time + 10 + Math.random() * 10
+    }
+    const sipping = time < st.sipUntil
+    for (const side of ['L', 'R']) {
+      const props = st.support === 'both' || st.support === side
+      this.armPose[side] = props ? onCounter[side] : resting[side]
+    }
+    if (sipping) this.armPose.R = [0.6, 0.66, 0.42]
   }
 
   /** Places a hand's skeleton at its arm's wrist, from tracked points. */

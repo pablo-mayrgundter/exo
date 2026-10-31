@@ -52,6 +52,11 @@ would otherwise rediscover.
   matched to the pose's wrists first anyway. The main loop sets the
   avatar's heading every frame, so a screenshot "from the front" set via
   `rotation.y` is really from behind.
+- **Saved state between runs.** The vCPU resumes from OPFS and the bar
+  from localStorage; tests that need a known start use `?fresh` (the
+  chip from power-on) or a new browser context. `exo.sitDown(i)`,
+  `exo.barLife.order(id)` and `exo.barLife.bartender.task` drive and
+  read the bar.
 - Don't `pkill -f "vite preview"` from a command that itself contains that
   text: it kills its own shell. Run the preview server as a background task.
 - **Colours in shaders are linear.** Hex colours through `THREE.Color` are

@@ -12,6 +12,7 @@
 // output, so anyone can check the work.
 import { Chip6502 } from './sim.js'
 import { makeTimer, KERNEL, QUANTUM } from './vcpu.js'
+import * as snapshots from './snapshot.js'
 
 const SLICE_MS = 50
 let init = null
@@ -26,13 +27,17 @@ self.onmessage = (e) => {
   const m = e.data
   if (m.type === 'init') {
     init = m
-    boot()
-    loop()
+    resume().then(loop)
   } else if (m.type === 'duty') {
     duty = m.duty
     shares = m.shares
     donated = m.donated
     writeShares()
+  } else if (m.type === 'save') {
+    persist()
+  } else if (m.type === 'forget') {
+    snapshots.forget()
+    boot()
   } else if (m.type === 'poke') {
     const j = jobs.find((x) => x.id === m.job)
     for (const a of m.addrs) chip.memory[a] = m.value
@@ -77,6 +82,34 @@ function boot() {
   writeShares()
   chip.reset()
   accum = init.levels ? new Uint16Array(chip.nodeCount) : null
+}
+
+/**
+ * Picks up where the last visit left off, from the snapshot in OPFS, if
+ * there is one for this program; otherwise powers on fresh. Then saves
+ * every 20 s.
+ */
+async function resume() {
+  boot()
+  const got = init.persist ? snapshots.decode(await snapshots.load() ?? new ArrayBuffer(4), init.program) : null
+  if (got) {
+    chip.restore(got.snap)
+    timer.state = got.host.timer
+    writeShares() // today's shares, not the ones saved with it
+    for (const j of jobs) {
+      // Carry on from the frame it was on, without a receipt for the gap.
+      j.last = chip.memory[j.frameAddr]
+      j.view.set(chip.memory.slice(j.watch.from, j.watch.from + j.watch.size))
+      j.input = j.view.slice()
+    }
+    self.postMessage({ type: 'resumed', saved: got.saved, halfCycles: chip.halfCycles })
+  }
+  if (init.persist) setInterval(persist, 20000)
+}
+
+function persist() {
+  if (!chip || !init?.persist) return
+  snapshots.save(snapshots.encode(chip.snapshot(), { timer: timer.state }, init.program))
 }
 
 function receipt(j, frame) {
