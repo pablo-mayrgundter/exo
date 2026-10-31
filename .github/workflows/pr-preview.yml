@@ -1,7 +1,7 @@
 name: PR preview
 
 # Tests every PR and deploys a live preview to
-# https://pablo-mayrgundter.github.io/exo/pr-preview/pr-<N>/ (gh-pages: pr-preview/pr-<N>/),
+# https://exo.cafe/pr-preview/pr-<N>/ (gh-pages: pr-preview/pr-<N>/),
 # removed when the PR closes. The build's base is relative, so the same
 # dist works at the root and in a preview directory.
 

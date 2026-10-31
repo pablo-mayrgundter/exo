@@ -65,13 +65,14 @@ would otherwise rediscover.
 
 - Rendering changes need screenshots: the bar, the street at ~100 m, the
   die from orbit, and the abode through the arch. Every PR also gets a live
-  preview at `https://pablo-mayrgundter.github.io/exo/pr-preview/pr-<n>/`
+  preview at `https://exo.cafe/pr-preview/pr-<n>/`
   (`.github/workflows/pr-preview.yml`); name what to check there.
 - Deploys go to the `gh-pages` branch: main at the root, previews under
-  `pr-preview/`. The main deploy's `clean-exclude` keeps the previews; keep
-  it there. There's no custom domain for now (the exo.cafe DNS wasn't
-  ready): no `CNAME` file, and none should be added until the domain
-  resolves to GitHub Pages.
+  `pr-preview/`. The custom domain (exo.cafe) is set in the repo's Pages
+  settings, and GitHub writes `CNAME` to the `gh-pages` branch itself. The
+  repo has no `CNAME` and shouldn't get one; the main deploy's
+  `clean-exclude` keeps GitHub's `CNAME` and the previews. Drop either
+  entry and a deploy deletes it (losing the domain or every preview).
 - Report what you couldn't verify (a real camera, a phone, real GPUs).
 
 ## Pull requests
