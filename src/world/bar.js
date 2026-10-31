@@ -312,7 +312,7 @@ export function makeBar({ names }) {
       max.update(dt, { time })
     },
     /** Redraws the CPU readout and the Life caption (a few times a second). */
-    paintReadouts(tick, chipRate) {
+    paintReadouts(tick, chipRate, powered = '') {
       if (!tick) return
       const r = tick.regs
       const hex = (v, n = 2) => v.toString(16).toUpperCase().padStart(n, '0')
@@ -332,7 +332,7 @@ export function makeBar({ names }) {
         g.font = `44px ${FONT_MONO}`
         g.fillStyle = '#6beaf2'
         g.textAlign = 'center'
-        g.fillText(`LIFE · $0200/$0300 · GEN ${tick.gen}`, W / 2, 62)
+        g.fillText(`LIFE · GEN ${tick.gen}${powered ? ' · ' + powered : ''}`, W / 2, 62)
         g.textAlign = 'left'
       })
     },

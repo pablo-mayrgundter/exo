@@ -2,7 +2,8 @@ import fs from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { Chip6502 } from '../src/chip/sim.js'
 import { assemble } from '../src/chip/asm.js'
-import { source, BOARD, ZP } from '../src/chip/life.js'
+import { source, BOARD, ZP, lifeStep } from '../src/chip/life.js'
+import { source as showSource, lightshowFrame, LEDS, ZP as SHOW } from '../src/chip/lightshow.js'
 
 const data = JSON.parse(fs.readFileSync(new URL('../public/chip/6502.json', import.meta.url), 'utf8'))
 
@@ -27,19 +28,22 @@ describe('Chip6502', () => {
   })
 })
 
-/** One generation of Life on a 16×16 torus, in JS. */
-function lifeStep(cells) {
-  const out = new Uint8Array(256)
-  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
-    let n = 0
-    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-      if (dx || dy) n += cells[((y + dy) & 15) * 16 + ((x + dx) & 15)]
+describe('Chip6502 over long runs', () => {
+  it('keeps working when its generation marks wrap past 2^32', () => {
+    const run = (gen) => {
+      const chip = new Chip6502(data)
+      load(chip, source)
+      chip.groupGen = gen
+      chip.queueGen = gen
+      chip.reset()
+      for (let i = 0; i < 2000; i++) chip.halfStep()
+      return chip.stateString() + chip.memory.slice(0, 0x400).join()
     }
-    const c = cells[y * 16 + x]
-    out[y * 16 + x] = n === 3 || (n === 2 && c) ? 1 : 0
-  }
-  return out
-}
+    // Starting just short of the limit, the marks wrap during the run; the
+    // chip must end up exactly where a fresh one does.
+    expect(run(0xffffffff - 300)).toBe(run(0))
+  })
+})
 
 describe('life.js on the chip', () => {
   it('computes a generation of Life, transistor by transistor', () => {
@@ -62,4 +66,34 @@ describe('life.js on the chip', () => {
     expect(cycles).toBeGreaterThan(30000)
     expect(cycles).toBeLessThan(100000)
   }, 120000)
+})
+
+describe('lightshow.js on the chip', () => {
+  it('plays the frames its JS reference predicts', () => {
+    const chip = new Chip6502(data)
+    load(chip, showSource)
+    chip.reset()
+    let lfsr = 1
+    let checked = 0
+    let pending = null
+    let last = 0
+    chip.onWrite = (a, d) => {
+      // INC writes the old value back before the new one; only a change counts.
+      if (a !== SHOW.frame || d === last) return
+      last = d
+      // FRAME was just bumped from d - 1: compare that frame's LEDs.
+      pending = { f: d - 1 }
+    }
+    while (checked < 3) {
+      chip.halfStep()
+      if (pending) {
+        const { leds, lfsr: next } = lightshowFrame(pending.f, lfsr)
+        expect([...chip.memory.slice(LEDS.a, LEDS.a + LEDS.count)]).toEqual([...leds])
+        expect(chip.memory[SHOW.lfsr]).toBe(next)
+        lfsr = next
+        pending = null
+        checked++
+      }
+    }
+  })
 })

@@ -42,3 +42,20 @@ describe('Frame', () => {
     expect(formatRate(0)).toBe('stopped')
   })
 })
+
+import { sceneToEcef, formatLength, BODY_UM, CHIP_UNIT_UM } from '../src/cosmic/units.js'
+
+describe('real units', () => {
+  it('puts the die at true size and a visitor at about the 6502 feature size', () => {
+    expect(9628 * CHIP_UNIT_UM).toBeCloseTo(4300, 6) // die height, µm
+    expect(formatLength(8769 * CHIP_UNIT_UM)).toBe('3.92 mm')
+    expect(formatLength(1.84 * BODY_UM)).toBe('8.2 µm')
+  })
+
+  it('maps the street (µm, x east, y up, z south) to ECEF at 0° N 0° E', () => {
+    const [x, y, z] = sceneToEcef([1e6, 2e6, -3e6]) // 1 m east, 2 m up, 3 m north
+    expect(x).toBeCloseTo(6378137 + 2, 6)
+    expect(y).toBeCloseTo(1, 6)
+    expect(z).toBeCloseTo(3, 6)
+  })
+})

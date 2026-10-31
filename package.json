@@ -16,6 +16,7 @@
   "license": "MIT",
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.2.0",
+    "@pablo-mayrgundter/portal-netgl": "0.6.10",
     "three": "^0.180.0"
   },
   "devDependencies": {

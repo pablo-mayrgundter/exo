@@ -22,6 +22,16 @@ would otherwise rediscover.
   `sim.js`, check the golden values in `test/sim.test.js`; to regenerate
   them, run the original `chipsim.js` + `macros.js` in a Node `vm` with DOM
   stubs and compare `stateString()` per half-step.
+- **Long runs.** The sim does billions of group walks an hour. Anything
+  counted per walk must survive 2^32: generation marks in `Uint32Array`s
+  once wrapped after about an hour and the walk recursed forever (`test/sim.test.js`,
+  "wrap"). Test long-run behaviour by starting counters near their limit.
+- **6502 read-modify-write.** `INC`/`DEC`/shifts on memory write the old
+  value back before the new one. Anything triggered by writes (frame
+  counters, receipts) must act on a change of value, not on every write.
+- **Rates from the worker's clock.** Under SwiftShader the main thread lags
+  and worker messages arrive in bursts; time things (frames per second)
+  with timestamps from the worker, not on arrival.
 - **Browser checks: headless Chromium on SwiftShader.** Launch Playwright
   with `--use-angle=swiftshader --enable-unsafe-swiftshader`; don't run
   `playwright install` in cloud sessions. Use `?enter&debug` and drive
@@ -30,8 +40,20 @@ would otherwise rediscover.
 - **Face tracking in tests:** Chromium's `--use-fake-device-for-media-stream
   --use-fake-ui-for-media-stream --use-file-for-fake-video-capture=face.y4m`
   with a still of a face (ffmpeg: `-loop 1 -i face.png -t 3 -pix_fmt yuv420p face.y4m`).
-  The model comes from storage.googleapis.com, so pass the session proxy to
-  Chromium (`proxy: { server: $HTTPS_PROXY }`).
+  The models come from storage.googleapis.com, so pass the session proxy to
+  Chromium as `proxy: { server: process.env.HTTPS_PROXY }`; its port changes
+  between sessions, so don't hard-code it. To test arm aiming without a
+  camera, set `exo.face` to `{running: true, poll() {}, arms: {L: [0, 1, 0], …}}`.
+- **Mocap test stills.** Crop poses into y4m stills (as for the face) and
+  run them through `?enter&debug` with *Mirror my face*; `exo.face.hands`
+  and `.arms` say what was seen. MediaPipe tasks-vision 1.2 labels hands
+  as the person's own on our unmirrored video (the right hand is "Right"),
+  despite older docs saying labels assume a mirrored image; hands are
+  matched to the pose's wrists first anyway. The main loop sets the
+  avatar's heading every frame, so a screenshot "from the front" set via
+  `rotation.y` is really from behind.
+- Don't `pkill -f "vite preview"` from a command that itself contains that
+  text: it kills its own shell. Run the preview server as a background task.
 - **Colours in shaders are linear.** Hex colours through `THREE.Color` are
   converted for you; literals in GLSL are not, and sRGB-looking values come
   out washed out after the OutputPass.
@@ -42,7 +64,15 @@ would otherwise rediscover.
 ## Verification and reporting
 
 - Rendering changes need screenshots: the bar, the street at ~100 m, the
-  die from orbit, and the abode through the arch.
+  die from orbit, and the abode through the arch. Every PR also gets a live
+  preview at `https://exo.cafe/pr-preview/pr-<n>/`
+  (`.github/workflows/pr-preview.yml`); name what to check there.
+- Deploys go to the `gh-pages` branch: main at the root, previews under
+  `pr-preview/`. The custom domain (exo.cafe) is set in the repo's Pages
+  settings, and GitHub writes `CNAME` to the `gh-pages` branch itself. The
+  repo has no `CNAME` and shouldn't get one; the main deploy's
+  `clean-exclude` keeps GitHub's `CNAME` and the previews. Drop either
+  entry and a deploy deletes it (losing the domain or every preview).
 - Report what you couldn't verify (a real camera, a phone, real GPUs).
 
 ## Pull requests

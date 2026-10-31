@@ -21,6 +21,10 @@ export const TIERS = [
 ]
 
 const cap = (a, b, r) => ({ kind: 'capsule', a, b, r })
+const ARM_TMP = new THREE.Quaternion()
+const HAND_W = new THREE.Vector3(), HAND_A = new THREE.Vector3(), HAND_B = new THREE.Vector3(), HAND_D = new THREE.Vector3()
+const HAND_S = new THREE.Vector3(), HAND_Q = new THREE.Quaternion(), HAND_M = new THREE.Matrix4(), UP = new THREE.Vector3(0, 1, 0)
+const ARM_V = new THREE.Vector3()
 const ball = (c, r) => ({ kind: 'sphere', a: c, r })
 
 // Pivots in avatar space (metres, feet at the origin, facing +z); prims in
@@ -33,6 +37,12 @@ export const PARTS = {
   legL: { pivot: [0.095, 0.94, 0], prims: [cap([0, -0.02, 0], [0, -0.86, 0.01], 0.072)] },
   legR: { pivot: [-0.095, 0.94, 0], prims: [cap([0, -0.02, 0], [0, -0.86, 0.01], 0.072)] },
 }
+// Each arm's end (the wrist) in its pivot's space, and its rest direction.
+const ARM_END = { L: new THREE.Vector3(0.05, -0.55, 0), R: new THREE.Vector3(-0.05, -0.55, 0) }
+const REST = { L: ARM_END.L.clone().normalize(), R: ARM_END.R.clone().normalize() }
+// MediaPipe's hand skeleton: 21 landmarks, these bones between them.
+const HAND_BONES = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11],
+  [11, 12], [9, 13], [13, 14], [14, 15], [15, 16], [13, 17], [0, 17], [17, 18], [18, 19], [19, 20]]
 // The bounding region a body is allocated at spawn, in metres.
 export const BODY_BOX = { min: [-0.36, 0, -0.2], max: [0.36, 1.84, 0.2] }
 
@@ -138,6 +148,10 @@ export class Avatar {
     this.phase = 0
     this.blink = 0
     this.headAim = new THREE.Euler()
+    /** Tracked arm directions (avatar space, unit), or null to swing. */
+    this.armAim = { L: null, R: null }
+    /** Tracked hands: 21 points relative to the wrist (avatar space, 63 numbers), or null. */
+    this.handAim = { L: null, R: null }
     /** Face landmarks (normalized, mirrored) to draw on the visor, or null. */
     this.face = null
     this.spawn = 1
@@ -191,6 +205,19 @@ export class Avatar {
       new THREE.MeshBasicMaterial({ map: this.visor.tex, toneMapped: false }))
     visor.position.set(0, 0.2, 0)
     this.parts.head.pivot.add(visor)
+    // Hands: a light skeleton at each wrist, shown while tracked, at any rez.
+    this.hands = {}
+    for (const side of ['L', 'R']) {
+      const mat = new THREE.MeshBasicMaterial({ color: this.hue.clone().multiplyScalar(1.4), toneMapped: false })
+      const bones = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.012, 0.012, 1, 6), mat, HAND_BONES.length)
+      const joints = new THREE.InstancedMesh(new THREE.SphereGeometry(0.016, 8, 6), mat, 21)
+      const g = new THREE.Group()
+      g.add(bones, joints)
+      g.visible = false
+      bones.frustumCulled = joints.frustumCulled = false
+      this.body.add(g)
+      this.hands[side] = { group: g, bones, joints }
+    }
     this.spawn = 0
   }
 
@@ -218,10 +245,17 @@ export class Avatar {
     const { armL, armR, legL, legR, head, torso } = this.parts
     legL.pivot.rotation.x = s * swing
     legR.pivot.rotation.x = -s * swing
-    armL.pivot.rotation.x = -s * swing * 0.8
-    armR.pivot.rotation.x = s * swing * 0.8
-    armL.pivot.rotation.z = 0.08
-    armR.pivot.rotation.z = -0.08
+    armL.pivot.rotation.set(-s * swing * 0.8, 0, 0.08)
+    armR.pivot.rotation.set(s * swing * 0.8, 0, -0.08)
+    // Tracked arms override the swing: aim each from its rest direction.
+    for (const [side, part] of [['L', armL], ['R', armR]]) {
+      const aim = this.armAim[side]
+      if (!aim) { part.aimed = null; continue }
+      const want = ARM_TMP.setFromUnitVectors(REST[side], ARM_V.set(aim[0], aim[1], aim[2]))
+      part.aimed = (part.aimed ?? part.pivot.quaternion.clone()).slerp(want, 1 - Math.exp(-dt * 14))
+      part.pivot.quaternion.copy(part.aimed)
+    }
+    for (const side of ['L', 'R']) this.poseHand(side, side === 'L' ? armL : armR)
     torso.pivot.position.y = PARTS.torso.pivot[1] + Math.abs(Math.cos(this.phase)) * swing * 0.04 + Math.sin(time * 1.7) * 0.004
     const k = 1 - Math.exp(-dt * 12)
     head.pivot.rotation.x += (this.headAim.x - head.pivot.rotation.x) * k
@@ -243,6 +277,24 @@ export class Avatar {
       this.bubble = null
     }
     this.drawVisor(time)
+  }
+
+  /** Places a hand's skeleton at its arm's wrist, from tracked points. */
+  poseHand(side, arm) {
+    const h = this.hands[side], pts = this.handAim[side]
+    h.group.visible = !!pts
+    if (!pts) return
+    const wrist = HAND_W.copy(ARM_END[side]).applyQuaternion(arm.pivot.quaternion).add(arm.pivot.position)
+    const P = (i, out) => out.set(pts[i * 3], pts[i * 3 + 1], pts[i * 3 + 2]).add(wrist)
+    for (let i = 0; i < 21; i++) h.joints.setMatrixAt(i, HAND_M.makeTranslation(P(i, HAND_A)))
+    HAND_BONES.forEach(([a, b], k) => {
+      P(a, HAND_A); P(b, HAND_B)
+      const len = HAND_A.distanceTo(HAND_B) || 1e-4
+      HAND_Q.setFromUnitVectors(UP, HAND_D.subVectors(HAND_B, HAND_A).normalize())
+      HAND_M.compose(HAND_A.add(HAND_B).multiplyScalar(0.5), HAND_Q, HAND_S.set(1, len, 1))
+      h.bones.setMatrixAt(k, HAND_M)
+    })
+    h.bones.instanceMatrix.needsUpdate = h.joints.instanceMatrix.needsUpdate = true
   }
 
   drawVisor(time) {
