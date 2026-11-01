@@ -184,7 +184,17 @@ button { font-family: var(--mono); }
   color: var(--orange-soft); font-family: var(--mono); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase;
 }
 .fold[hidden] { display: none; }
-.touch .panel.you.folded .meter, .touch .panel.you.folded #alloc, .touch .panel.you.folded #share, .touch .panel.you.folded #mirror { display: none; }
+.touch .fold.mini-btn { right: 66px; min-width: 44px; font-size: 16px; letter-spacing: 0; }
+.touch .panel.you.folded .meter, .touch .panel.you.folded #alloc, .touch .panel.you.folded #room, .touch .panel.you.folded #share, .touch .panel.you.folded #mirror { display: none; }
+/* Shrunk to a chip in the corner: your name and a handle to bring it back. */
+.touch .panel.you.mini { left: auto; width: auto; padding: 4px 48px 4px 12px; cursor: pointer; }
+/* …and the CAM light, which stays in sight while your camera is on. */
+.touch .panel.you.mini { display: flex; align-items: center; gap: 10px; }
+.touch .panel.you.mini > :not(.who):not(.mini-btn):not(.buttons) { display: none; }
+.touch .panel.you.mini .buttons { margin: 0; }
+.touch .panel.you.mini .buttons > :not(#cam) { display: none; }
+.touch .panel.you.mini .who { line-height: 40px; }
+.touch .panel.you.mini .fold.mini-btn { right: 2px; }
 .touch .buttons { gap: 6px; margin-top: 8px; }
 .touch .buttons button { min-height: 44px; }
 .touch #note { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; margin-top: 6px; }

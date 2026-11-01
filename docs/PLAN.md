@@ -58,8 +58,10 @@ real computer, a bartender, and other people.*
   - [x] On-screen buttons on touch screens (`src/touch.js`): the E action, labelled with what it does (Sit, Stand up, Ride the Art Car, Jack into NetMap), and chat; `?touch` shows them on a desktop, `?touch=0` hides them
   - [x] One thumb on each half walks and looks at once (it used to zoom); seated or riding, either half looks; a tap is per finger
   - [x] A phone layout, upright and on its side: the top bar on one line, a status panel that folds, the vCPU table as a sheet, captions under the top bar, safe-area insets; a pinch zooms the scene, never the page
+  - [x] The status panel in three sizes: open, folded, and a chip in the corner with just your name (and the CAM light while the camera's on); remembered
   - [x] Lighter on phones: pixel ratio ≤ 1.5 (`?dpr=` overrides), no canvas MSAA, bloom at CSS pixels; held upright, a wider view (50° across) so the glass and the terminal are in frame from a stool
-  - [ ] Check on real devices: iOS Safari (pinch and `gesturestart`, the keyboard over the chat, the notch and home bar), Android Chrome, the frame rate on a mid-range phone, *Mirror my face* on a phone camera
+  - [x] Checked by the owner on real devices: it all works
+  - [ ] Still to check on real devices: iOS Safari (pinch and `gesturestart`, the keyboard over the chat, the notch and home bar), Android Chrome, the frame rate on a mid-range phone, *Mirror my face* on a phone camera
   - [ ] The terminal's menu rows are ~19 px tall on a phone: open an order sheet (or bring the terminal up close) on a tap
   - [ ] Running on touch: Shift has no button, and the walk stick tops out at a walk
 

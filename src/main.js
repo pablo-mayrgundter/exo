@@ -420,17 +420,28 @@ if (touch) {
     jukeboxTapAt = performance.now()
     labelJukeboxCtl()
   })
-  let folded = true
-  try { folded = localStorage.getItem('exo.cafe/you-folded') !== 'no' } catch { /* folded */ }
-  const fold = (f) => {
-    folded = f
-    you.classList.toggle('folded', f)
-    $('you-fold').setAttribute('aria-expanded', String(!f))
-    $('you-fold').textContent = f ? 'More' : 'Less'
-    try { localStorage.setItem('exo.cafe/you-folded', f ? 'yes' : 'no') } catch { /* fine */ }
+  // Three sizes: open (everything), folded (the main buttons), and a chip
+  // with just your name, out of the way; tap the chip to bring it back.
+  let size = 'folded'
+  try {
+    const saved = localStorage.getItem('exo.cafe/you-size')
+    size = saved ?? (localStorage.getItem('exo.cafe/you-folded') === 'no' ? 'open' : 'folded')
+  } catch { /* folded */ }
+  const resize = (s) => {
+    size = s
+    you.classList.toggle('folded', s !== 'open')
+    you.classList.toggle('mini', s === 'mini')
+    $('you-fold').setAttribute('aria-expanded', String(s === 'open'))
+    $('you-fold').textContent = s === 'open' ? 'Less' : 'More'
+    $('you-mini').textContent = s === 'mini' ? '▴' : '▾'
+    $('you-mini').setAttribute('aria-label', s === 'mini' ? 'Show the status panel' : 'Shrink the status panel')
+    try { localStorage.setItem('exo.cafe/you-size', s) } catch { /* fine */ }
   }
-  $('you-fold').addEventListener('click', () => fold(!folded))
-  fold(folded)
+  $('you-mini').hidden = false
+  $('you-fold').addEventListener('click', () => resize(size === 'open' ? 'folded' : 'open'))
+  $('you-mini').addEventListener('click', (e) => { e.stopPropagation(); resize(size === 'mini' ? 'folded' : 'mini') })
+  you.addEventListener('click', () => { if (size === 'mini') resize('folded') })
+  resize(size)
   const measure = () => {
     hudInsets.top = document.querySelector('.bar.top').getBoundingClientRect().bottom
     hudInsets.bottom = innerHeight - you.getBoundingClientRect().top
