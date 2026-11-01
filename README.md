@@ -104,8 +104,14 @@ branch; each pull request gets a preview at
 `https://exo.cafe/pr-preview/pr-<n>/`. The domain is set in the repo's
 Pages settings, not in this repo.
 
-Open two tabs to see presence: they share a room over `BroadcastChannel`
-until the Synchronizer (Matrix and murmur) replaces it.
+Everyone at exo.cafe shares a room, peer to peer: browsers find each other
+through public Nostr relays ([Trystero](https://github.com/dmotz/trystero)),
+then talk directly over encrypted WebRTC data channels, with nothing to
+deploy. Peers see each other's IP addresses, as in any peer-to-peer mesh.
+The visitor who's been there longest runs Max for everyone. `?room=name`
+opens a private room, `?p2p=0` keeps to this browser's tabs, and
+`?relay=wss://…` signals through your own relay
+(`@trystero-p2p/ws-relay`).
 
 ## Layout
 

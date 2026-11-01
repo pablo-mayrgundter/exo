@@ -106,14 +106,15 @@ real computer, a bartender, and other people.*
   - [x] Orders interrupt his chores and conversation
 - **S1.7.3** As a visitor, my drink is a donation. ✅
   - [x] A drink is drunk a sip at a time, by clicking your glass: you reach for it, raise it, tip it and drink a sixth of it (a drink holds ≈200k half-cycles); what you drank goes on your tab, and your budget goes to Max's mind until the tab is paid (about 20 s a sip at a quarter of a core); untouched, nothing is drunk or donated
-  - [ ] Others see you raise your glass (send the sip with presence)
+  - [x] Others see you raise your glass: how far into a sip you are goes out with presence, and your glass moves with your avatar's hand on their screens
   - [x] Elbows: arms in two with two-bone IK, so a glass reaches the mouth; mocap bends them when the pose sees the elbow
   - [x] Your tab counts drinks and cycles; an empty glass gets "another?", and shorter conversations
   - [ ] Drinks for others: buy a round (a donation in their name)
 - **S1.7.4** As a regular, the bar remembers. ✅ (in this browser)
   - [x] Glasses on the counter, bottle levels, your tab and Max's memory of you in localStorage
   - [x] The vCPU itself, saved to OPFS every 20 s and on leaving, resumes exactly (Life carries on from its generation)
-  - [ ] Shared bar state for everyone in the room (with E2.2 and E4.1)
+  - [x] One Max for the room: the visitor who's been there longest runs him (the host); the others show his moves from the host's snapshots, send their orders to the host, and get their drinks back into their own state and tab. The host's Max clears everyone's empties, and when the host leaves the next-longest takes over
+  - [ ] Shared bottles and Max's memory across hosts (today each host keeps its own shelf and regulars)
 
 ### E1.4 More streets and buildings 💭 (T1, T2)
 - **S1.4.1** As a builder, I can put up a building on a pad.
@@ -218,20 +219,25 @@ the shape of the net.*
 *Multi-person presence chat on top of the Synchronizer, with Max Pablo.*
 
 ### E4.1 Presence protocol ✅ / 🔜 (T5)
-- **S4.1.1** As a visitor, I see others' avatars move, at their rez. ✅ (between tabs of one browser)
+- **S4.1.1** As a visitor, I see others' avatars move, at their rez. ✅
   - [x] Presence over a transport interface; BroadcastChannel transport; state at 10 Hz
-- **S4.1.2** As a visitor, I see people from anywhere. 🔜
-  - [ ] Matrix transport: a room per Cloud City place; state as ephemeral events, chat as messages
-  - [ ] Interest management: only people near you, at a rate that falls with distance
+- **S4.1.2** As a visitor, I see people from anywhere. ✅ (peer to peer) / 🔜
+  - [x] Peer to peer over WebRTC with Trystero (`src/net/p2p.js`): signalling over public Nostr relays, then direct, encrypted data channels; nothing to deploy. `?room=` picks a room, `?relay=` a self-hosted signalling relay, `?p2p=0` turns it off
+  - [x] Tabs of one browser over BroadcastChannel too, each message passed on once
+  - [ ] A TURN relay (Cloudflare's or Metered's, or coturn) for networks that block direct connections; it also hides visitors' IPs from each other
+  - [ ] Unordered, unreliable channels for state (positions don't need retransmits)
+  - [ ] Interest management: only people near you, at a rate that falls with distance; rooms per place once a mesh gets big (~30)
+  - [ ] Matrix for what should outlast a session (identity, chat history, receipts), and as signalling
 - **S4.1.3** As a visitor, my mocap reaches others. 🔜
   - [x] Arms: MediaPipe Pose aims each arm shoulder to wrist; raise your hands and the avatar does; arm directions go out with presence
   - [x] While the camera's on, a CAM light in the status panel; the video preview is hidden unless you ask for it
   - [ ] Send head pose and ~50 blendshape weights, not landmarks (a few hundred bytes a frame)
   - [ ] Draw the visor from blendshapes, so the face survives the network
-  - [ ] Elbows: split the arm in two and use the elbow landmark
+  - [x] Elbows: split the arm in two and use the elbow landmark
 
 ### E4.2 Voice 🔜 (T5)
 - **S4.2.1** As a visitor, I can talk to people near me, spatially.
+  - [ ] Voice over the peer connections we already have (Trystero `addStream`), placed with Web Audio panners at each avatar; an SFU (LiveKit, as MatrixRTC uses) past ~6 talkers
   - [ ] murmur (Mumble) per room, with positional audio; or WebRTC SFU — decide with Bldrs Collab
   - [ ] The Synch Master deploys murmur containers on demand, one per room group, reused across users
 - **S4.2.2** As a group, our voice server runs near us. (S3.2.4)

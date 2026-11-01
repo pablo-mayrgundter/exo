@@ -13,10 +13,14 @@
 //   - A glass left empty for a while he clears: he takes it from the
 //     counter to the pad, where it de-rezzes.
 //
+// With others in the room, one visitor's browser (the host) runs him and
+// the rest show a puppet: snapshot() is what the host sends, ten times a
+// second, and puppet() plays it back.
+//
 // Positions are in bar space (body units, the bar's floor centre at the
 // origin; the lane is behind the counter at z ≈ -5.3, facing +z).
 import * as THREE from 'three'
-import { drinkById } from '../world/drinks.js'
+import { drinkById, makeGlass } from '../world/drinks.js'
 
 const WALK = 0.9 // body units per second: a shuffle
 const TALK_Z = -4.8 // close enough to lean on the counter
@@ -63,6 +67,7 @@ export class Bartender {
 
   order(seat, drink, by) {
     if (this.orders.some((o) => o.seat === seat)) return false
+    if (this.task?.kind === 'serve' && this.task.seat === seat) return false // being made
     this.orders.push({ seat, drink, by })
     return true
   }
@@ -107,7 +112,7 @@ export class Bartender {
     const order = this.orders.shift()
     if (order) { this.startServe(order); return }
     // Empties he's let stand a while, unless someone's about to order into them.
-    const empty = this.state.empties(CLEAR_AFTER)[0]
+    const empty = (this.glassware.empties?.(CLEAR_AFTER) ?? this.state.empties(CLEAR_AFTER))[0]
     if (empty !== undefined && this.lastWasChore !== 'clear') {
       this.task = { kind: 'clear', seat: empty, phase: 'collect-walk', t: 0 }
       this.lastWasChore = 'clear'
@@ -141,7 +146,8 @@ export class Bartender {
       return
     }
     // An empty at that stool goes back to the pad first, then a new glass rezzes in.
-    const phase = this.state.glasses[seat] ? 'collect-walk' : 'pad-walk'
+    const there = this.glassware.at ? this.glassware.at(seat) : !!this.state.glasses[seat]
+    const phase = there ? 'collect-walk' : 'pad-walk'
     this.task = { kind: 'serve', seat, drink: d, by, bottle, phase, t: 0 }
   }
 
@@ -324,6 +330,71 @@ export class Bartender {
     }
   }
 
+  /** What a puppet needs to show him as the host sees him (positions in bar space). */
+  snapshot() {
+    const av = this.avatar, t = this.task
+    const r = (v) => Math.round(v * 1000) / 1000
+    const pour = t?.kind === 'serve' && t.phase === 'pour' && t.glass
+    return {
+      p: av.group.position.toArray().map(r), yaw: r(av.group.rotation.y), speed: r(this.speed), lean: r(av.lean),
+      arms: [av.armPose.L, av.armPose.R].map((a) => (a && !a.hand ? a.map(r) : null)),
+      carry: this.carry ? this.carry.material.color.getHex() : null,
+      tilt: this.carry ? r(this.carry.rotation.z) : 0,
+      held: this.held ? { drink: this.held.drink, level: r(this.held.level ?? 0) } : null,
+      pour: pour ? { seat: t.seat, drink: t.drink.id, level: r(Math.max(0, (t.t - 0.6) / 1.6)) } : null,
+      pad: this.glassware.pad?.busy ? 1 : 0,
+    }
+  }
+
+  /** Shows him from a host's snapshot: no decisions here, just the pose. */
+  puppet(dt, time, s) {
+    const av = this.avatar
+    if (!s) { av.update(dt, { speed: 0, time }); return }
+    this.task = null
+    this.orders = []
+    const k = 1 - Math.exp(-dt * 10)
+    av.group.position.lerp(PUP.fromArray(s.p), k)
+    av.group.rotation.y += wrap(s.yaw - av.group.rotation.y) * k
+    av.lean = s.lean
+    av.armPose.L = s.arms?.[0] ?? null
+    av.armPose.R = s.arms?.[1] ?? null
+    // The bottle in his hand.
+    if (s.carry != null && !this.carry) this.takeBottle({ color: s.carry })
+    if (s.carry == null && this.carry) this.dropBottle()
+    if (this.carry) this.carry.rotation.z = s.tilt ?? 0
+    // A glass in his hand, and one being poured on the counter.
+    this.held = this.showGlass(this.held, s.held)
+    this.pouring = this.showGlass(this.pouring, s.pour)
+    if (this.pouring) {
+      this.pouring.group.position.copy(this.bar.glassAt(this.bar.seats[s.pour.seat]))
+      this.pouring.group.quaternion.identity()
+    }
+    this.glassware.pad?.show?.(!!s.pad)
+    av.update(dt, { speed: s.speed, time })
+    this.holdGlass()
+  }
+
+  /** A puppet's glass: kept, replaced or removed to match `want` ({drink, level}). */
+  showGlass(glass, want) {
+    if (glass && (!want || glass.drink !== want.drink)) { glass.dispose(); glass = null }
+    if (!want) return null
+    if (!glass) {
+      glass = makeGlass(drinkById(want.drink) ?? drinkById('zero-page'))
+      glass.drink = want.drink
+      this.bar.group.add(glass.group)
+    }
+    glass.setLevel(want.level)
+    return glass
+  }
+
+  /** Lets go of whatever a puppet was showing (on becoming the host, or leaving). */
+  release() {
+    this.dropBottle()
+    for (const k of ['held', 'pouring']) { this[k]?.dispose(); this[k] = null }
+    this.glassware.pad?.show?.(false)
+    this.task = null
+  }
+
   takeBottle(info) {
     const b = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.08, 0.38, 10),
       new THREE.MeshBasicMaterial({ color: info.color, toneMapped: false }))
@@ -339,6 +410,8 @@ export class Bartender {
     this.carry = null
   }
 }
+
+const PUP = new THREE.Vector3()
 
 function wrap(a) { return Math.atan2(Math.sin(a), Math.cos(a)) }
 function pick(a) { return a[Math.floor(Math.random() * a.length)] }
