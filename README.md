@@ -94,7 +94,8 @@ npm run build      # → dist/, deployable as static files
 ```
 
 Controls: WASD or arrows to walk, Shift to run, drag to look, wheel or
-pinch to zoom out over the die. Enter chats; E at the gate jacks into NetMap.
+pinch to zoom out over the die. Enter chats and opens the conversation (Esc
+closes it); E at the gate jacks into NetMap.
 On touch screens, drag the left half to walk and the right half to look
 (both at once with two thumbs), and pinch to zoom; buttons stand in for the
 keys: one for whatever E would do (Sit, Stand up, Ride the Art Car…), one to

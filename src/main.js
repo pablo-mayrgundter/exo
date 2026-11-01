@@ -32,6 +32,7 @@ import { Presence, BroadcastTransport } from './net/presence.js'
 import { P2PTransport, MultiTransport } from './net/p2p.js'
 import { Controls } from './controls.js'
 import { touchMode, pixelRatio, promptFor, placeAbove, jukeboxLabels, fovFor } from './touch.js'
+import { Thread, mountThread } from './chat/thread.js'
 import { MANIFESTO, MIST, MAX } from './content.js'
 
 const $ = (id) => document.getElementById(id)
@@ -243,7 +244,36 @@ try { sharing = localStorage.getItem('exo.cafe/share-rez') !== 'off' } catch { /
 function tierFor(s, pos) {
   return s.shares && pos.distanceTo(new THREE.Vector3(...s.p)) <= SHARE_RADIUS ? s.tier : 0
 }
+// The conversation: what's said in the room, kept per room in this browser.
+const THREAD_KEY = `exo.cafe/thread/${ROOM}`
+const thread = new Thread({
+  max: 200,
+  load: () => { try { return JSON.parse(localStorage.getItem(THREAD_KEY)) } catch { return null } },
+  save: (entries) => { try { localStorage.setItem(THREAD_KEY, JSON.stringify(entries)) } catch { /* fine */ } },
+})
+const threadView = mountThread($('thread'), thread)
+function showThread(open) {
+  thread.setOpen(open)
+  $('thread').hidden = !open
+  $('thread-toggle').setAttribute('aria-expanded', String(open))
+  if (open) threadView.scrollToEnd()
+}
+thread.onChange(() => {
+  const n = thread.unread
+  for (const id of ['thread-unread', 'talk-unread']) {
+    $(id).hidden = n === 0
+    $(id).textContent = n > 9 ? '9+' : String(n)
+  }
+})
+$('thread-toggle').addEventListener('click', () => showThread(!thread.open))
+const nameOf = (id) => presence.peers.get(id)?.state.name ?? 'someone'
+// Comings and goings, without the flicker of a slow connection: a leave is
+// noted after 15 s gone, and someone back by then neither left nor came.
+const leaving = new Map() // name → timer
 presence.on('join', (m) => {
+  const who = m.name ?? 'Someone'
+  if (leaving.has(who)) { clearTimeout(leaving.get(who)); leaving.delete(who) }
+  else thread.add({ kind: 'note', who, text: `${who} came in.` })
   const a = new Avatar({ hue: m.hue, name: m.name, tier: 0 })
   others.set(m.id, a)
   scenes[m.scene === 'abode' ? 1 : 0].add(a.group)
@@ -251,12 +281,21 @@ presence.on('join', (m) => {
 })
 presence.on('leave', (m) => {
   const a = others.get(m.id)
+  if (a) {
+    const who = a.name || 'Someone'
+    clearTimeout(leaving.get(who))
+    leaving.set(who, setTimeout(() => { leaving.delete(who); thread.add({ kind: 'note', who, text: `${who} left.` }) }, 15000))
+  }
   if (!a) return
   a.group.removeFromParent()
   a.dispose()
   others.delete(m.id)
 })
-presence.on('say', (m) => others.get(m.id)?.say(m.text))
+presence.on('say', (m) => {
+  others.get(m.id)?.say(m.text)
+  const peer = presence.peers.get(m.id)?.state
+  thread.add({ kind: 'other', who: nameOf(m.id), text: m.text, hue: peer?.hue })
+})
 
 // --- HUD ---
 $('handle').value = me.name
@@ -400,6 +439,7 @@ function openChat(open) {
   $('chat').classList.toggle('open', open)
   document.documentElement.classList.toggle('chatting', open)
   $('talk').setAttribute('aria-expanded', String(open))
+  showThread(open)
   if (open) $('say').focus()
   else $('say').blur()
 }
@@ -412,7 +452,11 @@ if (touch) {
   // Keep the input focused when the tap is the one that closes the chat.
   $('talk').addEventListener('pointerdown', (e) => e.preventDefault())
   $('talk').addEventListener('click', () => openChat(!chatOpen))
-  $('say').addEventListener('blur', () => { if (chatOpen) openChat(false) })
+  // The sheet closes on a tap outside it (not on blur: scrolling the
+  // thread takes the focus from the input).
+  addEventListener('pointerdown', (e) => {
+    if (chatOpen && !e.target.closest('#chat, #talk')) openChat(false)
+  })
   $('jukebox-ctl').addEventListener('click', (e) => {
     const b = e.target.closest('[data-jb]')
     if (!b) return
@@ -496,16 +540,23 @@ $('chat').addEventListener('submit', (e) => {
   const text = $('say').value.trim()
   if (!text) return
   $('say').value = ''
-  $('say').blur()
+  // On a phone the sheet stays open to carry on; on a desktop, back to walking.
+  if (!touch) $('say').blur()
   avatar.say(text)
   presence.say(text)
+  thread.add({ kind: 'me', who: me.name, text, hue: me.hue })
   // At a stool, Max listens: orders, the menu, or conversation.
   if (barLife.hear(text, clock.elapsedTime)) return
   if (/\bmax\b|drink|bar|hello|hi\b/i.test(text)) setTimeout(() => maxSays(pick(MAX.thoughts)), 1200)
 })
+$('say').addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return
+  if (touch) openChat(false)
+  else { showThread(false); $('say').blur() }
+})
 addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT') return
-  if (e.key === 'Enter' && entered) { e.preventDefault(); if (touch) openChat(true); else $('say').focus() }
+  if (e.key === 'Enter' && entered) { e.preventDefault(); if (touch) openChat(true); else { showThread(true); $('say').focus() } }
   if (e.code === 'KeyE') interact()
   if (e.code === 'KeyV' && entered) setView(view[viewKey()] === 'first' ? 'third' : 'first')
   // 1–4 on a stool orders from the terminal's menu.
@@ -524,6 +575,8 @@ let lastMax = 0
 let captionTimer = 0
 function maxSays(text) {
   bar.max.say(text, 8)
+  // Into the conversation, if you're in the bar to hear him.
+  if (side === 0) thread.add({ kind: 'max', who: 'Max Pablo', text })
   lastMax = performance.now()
   // On a stool, in first person, his bubble is above the frame: subtitle it.
   if (barLife?.seat == null) return
