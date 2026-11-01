@@ -229,7 +229,7 @@ presence.on('say', (m) => others.get(m.id)?.say(m.text))
 $('handle').value = me.name
 $('name').textContent = me.name
 $('manifesto').textContent = MANIFESTO
-$('mist').innerHTML = MIST.map((l) => `<li>${l}</li>`).join('')
+$('mist-notes').innerHTML = MIST.map((l) => `<li>${l}</li>`).join('')
 document.querySelectorAll('[data-open]').forEach((b) => b.addEventListener('click', () => { $(b.dataset.open).hidden = false }))
 document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => { $(b.dataset.close).hidden = true }))
 $('enter').addEventListener('click', enter)
