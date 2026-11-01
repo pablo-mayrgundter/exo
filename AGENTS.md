@@ -52,6 +52,24 @@ would otherwise rediscover.
   matched to the pose's wrists first anyway. The main loop sets the
   avatar's heading every frame, so a screenshot "from the front" set via
   `rotation.y` is really from behind.
+- **Phones in Playwright.** Use `devices['iPhone 13']` / `['Pixel 7']`
+  (its viewport is 390×664, the browser chrome taken off; pass
+  `viewport` for 390×844 or landscape) and `page.touchscreen.tap`. For
+  drags and pinches send raw touches over CDP
+  (`Input.dispatchTouchEvent`, touchStart/Move/End with `id`s for two
+  fingers): they drive `controls` and scroll panels, and a pinch on the
+  page shows whether it zooms (`visualViewport.scale`).
+  `Input.synthesizeScrollGesture`/`PinchGesture` do nothing headless.
+  `?touch` gives a desktop the touch HUD. To tap something in the world,
+  project it: `v.project(exo.camera)` → `((x+1)/2·innerWidth, (1−y)/2·innerHeight)`,
+  and let a first-person head settle (~1 s) after a look before tapping.
+- **Raycasts and lines.** three picks lines within
+  `raycaster.params.Line.threshold` world units, and the world unit is a
+  micrometre (22 cm at the bar's scale); main.js narrows it. Give
+  anything tappable a mesh to hit, not just neon edges.
+- **Restart `vite preview` after a rebuild** (stop its background task,
+  start a new one): a rebuild replaces `dist/` and renames the hashed
+  assets under a running server.
 - **Saved state between runs.** The vCPU resumes from OPFS and the bar
   from localStorage; tests that need a known start use `?fresh` (the
   chip from power-on) or a new browser context. `exo.sitDown(i)`,

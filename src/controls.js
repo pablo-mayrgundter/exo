@@ -1,7 +1,7 @@
 // Walking and looking. WASD or arrows move, Shift runs, drag looks, the
 // wheel (or a pinch) zooms from over-the-shoulder out to orbit over the
 // whole die. On touch screens, drag on the left half to walk and on the
-// right half to look.
+// right half to look (anywhere, while you can't walk: seated or riding).
 import * as THREE from 'three'
 
 export class Controls {
@@ -14,8 +14,9 @@ export class Controls {
     this.minDist = 2.2
     this.maxDist = 2600
     this.move = new THREE.Vector2() // touch joystick, -1..1
-    this.dragged = false
     this.enabled = true
+    /** Whether a touch on the left half walks; main.js clears it on a stool or the Art Car. */
+    this.walkable = true
     /** Called with a pointer event when the pointer is released without dragging. */
     this.onClick = null
 
@@ -30,9 +31,16 @@ export class Controls {
     let pinch = 0
     dom.addEventListener('pointerdown', (e) => {
       dom.setPointerCapture(e.pointerId)
-      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, walk: e.pointerType === 'touch' && e.clientX < innerWidth / 2 })
-      this.dragged = false
-      if (pointers.size === 2) pinch = spread(pointers)
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, moved: false,
+        walk: e.pointerType === 'touch' && this.walkable && e.clientX < innerWidth / 2 })
+      // Two fingers on the same side pinch. One on each (a thumb walking,
+      // a thumb looking) work on their own.
+      const [a, b] = [...pointers.values()]
+      if (pointers.size === 2 && a.walk === b.walk) {
+        pinch = spread(pointers)
+        for (const q of [a, b]) { q.moved = true; q.walk = false } // a pinch, not taps or a walk
+        this.move.set(0, 0)
+      }
     })
     dom.addEventListener('pointermove', (e) => {
       const p = pointers.get(e.pointerId)
@@ -40,10 +48,10 @@ export class Controls {
       const dx = e.clientX - p.x, dy = e.clientY - p.y
       p.x = e.clientX
       p.y = e.clientY
-      if (Math.hypot(p.x - p.x0, p.y - p.y0) > 6) this.dragged = true
-      if (pointers.size === 2) {
+      if (Math.hypot(p.x - p.x0, p.y - p.y0) > 6) p.moved = true
+      if (pinch && pointers.size === 2) {
         const s = spread(pointers)
-        if (pinch) this.zoom(pinch / s)
+        this.zoom(pinch / s)
         pinch = s
         return
       }
@@ -59,7 +67,8 @@ export class Controls {
       pointers.delete(e.pointerId)
       if (p?.walk) this.move.set(0, 0)
       if (pointers.size < 2) pinch = 0
-      if (p && !this.dragged && this.onClick) this.onClick(e)
+      // A tap: this pointer didn't drag (another finger may be walking).
+      if (p && !p.moved && e.type === 'pointerup' && this.onClick) this.onClick(e)
     }
     dom.addEventListener('pointerup', end)
     dom.addEventListener('pointercancel', end)
