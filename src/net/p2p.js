@@ -23,6 +23,8 @@ export class P2PTransport {
    */
   constructor({ room = 'bar', relay = null, turn = null, join = null } = {}) {
     this.handlers = []
+    this.streamHandlers = []
+    this.outStreams = new Map() // stream → metadata: what we send everyone, and newcomers too
     this.peerIds = new Map() // Trystero peer id → the presence id it speaks for
     this.peers = 0
     this.error = null
@@ -46,7 +48,15 @@ export class P2PTransport {
     })
     this.action = this.room.makeAction('m')
     this.action.onMessage = (m, meta) => this.receive(m, meta?.peerId ?? meta)
-    this.room.onPeerJoin = () => { this.peers++ }
+    this.room.onPeerJoin = (peerId) => {
+      this.peers++
+      // Our voice, if it's on, to whoever just arrived.
+      for (const [stream, metadata] of this.outStreams) this.room.addStream?.(stream, { target: peerId, metadata })
+    }
+    this.room.onPeerStream = (stream, peerId, metadata) => {
+      const id = (metadata && typeof metadata.id === 'string' && metadata.id) || this.peerIds.get(peerId)
+      this.streamHandlers.forEach((h) => h(stream, id, peerId))
+    }
     this.room.onPeerLeave = (peerId) => {
       this.peers = Math.max(0, this.peers - 1)
       const id = this.peerIds.get(peerId)
@@ -67,6 +77,20 @@ export class P2PTransport {
   }
 
   onMessage(h) { this.handlers.push(h) }
+
+  /** Sends a media stream (your voice) to everyone in the room, now and as they arrive. */
+  addStream(stream, metadata = {}) {
+    this.outStreams.set(stream, metadata)
+    try { this.room?.addStream?.(stream, { metadata }) } catch (e) { console.warn('exo: could not send a stream', e) }
+  }
+
+  removeStream(stream) {
+    this.outStreams.delete(stream)
+    try { this.room?.removeStream?.(stream) } catch { /* gone already */ }
+  }
+
+  /** Streams from peers: h(stream, presenceId, peerId). */
+  onStream(h) { this.streamHandlers.push(h) }
 
   close() {
     try { this.room?.leave() } catch { /* already gone */ }
