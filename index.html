@@ -10,8 +10,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600&family=Michroma&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-  <script type="module" crossorigin src="./assets/index-OAgUqszu.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-5Eyw35O2.css">
+  <script type="module" crossorigin src="./assets/index-B_nlO3p1.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-BzNlfxbU.css">
 </head>
 <body>
 <canvas id="view" aria-label="Exo Cafe, a 3D scene"></canvas>
@@ -59,13 +59,17 @@
 <div id="caption" class="caption" role="status" aria-live="polite" hidden></div>
 
 <form id="chat" class="chat" autocomplete="off">
-  <input id="say" type="text" maxlength="160" placeholder="Say something  (Enter)" aria-label="Say something">
+  <ol id="thread" class="thread" role="log" aria-label="Chat in this room" aria-live="polite" hidden></ol>
+  <div class="chat-row">
+    <button type="button" id="thread-toggle" class="thread-toggle" aria-expanded="false" aria-controls="thread" title="The conversation (Enter to talk, Esc to close)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14M5 11h14M5 16h9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><span id="thread-unread" class="unread" hidden></span></button>
+    <input id="say" type="text" maxlength="160" placeholder="Say something  (Enter)" aria-label="Say something">
+  </div>
 </form>
 <div id="prompt" class="prompt" hidden></div>
 <!-- Touch screens only (touch.js): buttons for E and Enter, and the jukebox's J, N, M. -->
 <div id="touchbar" class="touchbar" hidden>
   <button type="button" id="act" class="act" hidden></button>
-  <button type="button" id="talk" class="talk" aria-label="Chat" aria-expanded="false" aria-controls="chat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v10H10l-4 4v-4H4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></button>
+  <button type="button" id="talk" class="talk" aria-label="Chat" aria-expanded="false" aria-controls="chat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v10H10l-4 4v-4H4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg><span id="talk-unread" class="unread" hidden></span></button>
 </div>
 <div id="jukebox-ctl" class="jukebox-ctl" role="group" aria-label="Jukebox" hidden><button type="button" data-jb="toggle">Play</button><button type="button" data-jb="next">Next</button><button type="button" data-jb="mute">Mute</button></div>
 <video id="selfie" class="selfie" muted playsinline hidden></video>
