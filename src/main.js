@@ -558,6 +558,10 @@ function openNetMap() {
 
 // Clicking a Life cell pokes the 6502's RAM.
 const ray = new THREE.Raycaster()
+// Lines pick within a world unit by default, and the world unit is a
+// micrometre (22 cm at the bar's scale): your glass's outline caught taps
+// meant for the terminal's lower rows. Pick them at about a centimetre.
+ray.params.Line.threshold = 0.01 * BODY_UM
 controls.onClick = (e) => {
   if (side !== 0 || !entered) return
   const ndc = new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1)
