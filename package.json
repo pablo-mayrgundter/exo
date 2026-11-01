@@ -17,7 +17,9 @@
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.2.0",
     "@pablo-mayrgundter/portal-netgl": "0.6.10",
-    "three": "^0.180.0"
+    "@trystero-p2p/ws-relay": "^0.26.0",
+    "three": "^0.180.0",
+    "trystero": "^0.26.0"
   },
   "devDependencies": {
     "vite": "^8.3.5",

@@ -27,6 +27,7 @@ export function makeRezPad(bar) {
   bar.group.add(group)
 
   const jobs = [] // { glass, dir, t, dur, done }
+  let shown = false
   return {
     group,
     /** Rezzes a glass in on the pad. Watch the returned job's `done`. */
@@ -49,7 +50,9 @@ export function makeRezPad(bar) {
       jobs.push(job)
       return job
     },
-    get busy() { return jobs.length > 0 },
+    get busy() { return jobs.length > 0 || shown },
+    /** Lights the beam for a job the host's Max is doing (on a puppet's bar). */
+    show(on) { shown = on },
     update(dt, time) {
       for (const j of jobs) {
         j.t += dt
@@ -61,10 +64,10 @@ export function makeRezPad(bar) {
         }
       }
       for (let i = jobs.length - 1; i >= 0; i--) if (jobs[i].done) jobs.splice(i, 1)
-      const want = jobs.length ? 0.35 + 0.15 * Math.sin(time * 18) : 0
+      const want = jobs.length || shown ? 0.35 + 0.15 * Math.sin(time * 18) : 0
       beamMat.opacity += (want - beamMat.opacity) * (1 - Math.exp(-dt * 8))
       beam.visible = beamMat.opacity > 0.01
-      ringMat.opacity = 0.55 + 0.25 * Math.sin(time * (jobs.length ? 9 : 1.3))
+      ringMat.opacity = 0.55 + 0.25 * Math.sin(time * (jobs.length || shown ? 9 : 1.3))
     },
   }
 }

@@ -2,12 +2,15 @@
 //
 // The transport is an interface so the Synchronizer can replace it (a
 // Matrix room for state and chat, murmur for voice; docs/PLAN.md track T5).
-// This first one is a BroadcastChannel: every tab of exo.cafe in the same
-// browser shares a room. It's enough to build and test the protocol on.
+// BroadcastTransport links the tabs of one browser; P2PTransport (p2p.js)
+// links browsers over WebRTC; MultiTransport runs both.
 //
-// Messages: {t: 'state', id, name, hue, tier, scene, p: [x, y, z], yaw, head: [x, y, z], speed}
-//           {t: 'say', id, text}
-//           {t: 'bye', id}
+// Messages: {t: 'state', id, n, name, hue, tier, scene, p: [x, y, z], yaw, head: [x, y, z], …}
+//           {t: 'say', id, n, text}
+//           {t: 'bye', id, n}
+//           {t: <anything else>, id, n, …}: passed to 'msg' listeners (the shared bar)
+// `n` counts up from the sender's clock at page load (so a reload, with
+// the same id, starts above where it left off), for dropping duplicates.
 
 export class BroadcastTransport {
   constructor(room = 'exo.cafe/main') {
@@ -27,9 +30,10 @@ export class Presence {
     this.self = self
     /** @type {Map<string, {state: object, seen: number}>} */
     this.peers = new Map()
-    this.listeners = { join: [], leave: [], say: [] }
+    this.listeners = { join: [], leave: [], say: [], msg: [] }
+    this.n = Date.now()
     transport.onMessage((m) => this.receive(m))
-    addEventListener('pagehide', () => transport.send({ t: 'bye', id: self.id }))
+    addEventListener('pagehide', () => transport.send({ t: 'bye', id: self.id, n: this.n++ }))
   }
 
   on(ev, fn) { this.listeners[ev].push(fn) }
@@ -44,12 +48,17 @@ export class Presence {
       this.listeners.say.forEach((f) => f(m))
     } else if (m.t === 'bye') {
       if (this.peers.delete(m.id)) this.listeners.leave.forEach((f) => f(m))
+    } else if (typeof m.t === 'string') {
+      this.listeners.msg.forEach((f) => f(m))
     }
   }
 
-  publish(state) { this.transport.send({ t: 'state', id: this.self.id, ...state }) }
+  publish(state) { this.transport.send({ t: 'state', id: this.self.id, n: this.n++, ...state }) }
 
-  say(text) { this.transport.send({ t: 'say', id: this.self.id, text }) }
+  /** Sends any other message to the room ({t, …}). */
+  send(t, data = {}) { this.transport.send({ ...data, t, id: this.self.id, n: this.n++ }) }
+
+  say(text) { this.transport.send({ t: 'say', id: this.self.id, n: this.n++, text }) }
 
   /** Forgets peers not heard from in a while. */
   sweep(timeoutMs = 5000) {

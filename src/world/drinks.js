@@ -45,11 +45,13 @@ export function makeGlass(drink) {
   outline.position.y = h / 2
   group.add(outline, liquid)
   const setLevel = (l) => {
+    glass.level = l
     const v = Math.max(0.001, Math.min(1, l)) * h * 0.9
     liquid.scale.y = v
     liquid.position.y = v / 2 + 0.005
     liquid.visible = l > 0.01
   }
+  const glass = { group, drink: drink.id, level: 1 }
   setLevel(1)
   // Rezzing in (0 → 1) or out (1 → 0): built from the base up, the outline
   // fading in, the liquid only once it's whole.
@@ -63,7 +65,7 @@ export function makeGlass(drink) {
     outline.geometry.dispose(); outline.material.dispose()
     liquid.geometry.dispose(); liquid.material.dispose()
   }
-  return { group, setLevel, setRez, dispose }
+  return Object.assign(glass, { setLevel, setRez, dispose })
 }
 
 /** The bar's saved state, and the shelf it's kept in sync with. */

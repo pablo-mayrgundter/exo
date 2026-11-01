@@ -62,6 +62,16 @@ would otherwise rediscover.
   `exo.clock`; set `exo.clock.getDelta = () => 0` to hold a pose (a sip
   started with `barLife.sip(exo.clock.elapsedTime - t)` is `t` seconds
   in), then restore it.
+- **Peer to peer in tests.** The public Nostr relays Trystero signals
+  through are unreachable from cloud sessions. Run a local relay
+  (`createWsRelayServer({port: 8787})` from
+  `@trystero-p2p/ws-relay/server`, as a background task), open
+  `?relay=ws://localhost:8787&room=<fresh>` in two separate browser
+  contexts (separate contexts are separate visitors; tabs in one context
+  also share BroadcastChannel and localStorage), and launch Chromium with
+  `--disable-features=WebRtcHideLocalIpsWithMdns` so the two can connect
+  locally. `exo.barLife.host` says who runs Max; `exo.p2p.peers` counts
+  links.
 - **Element ids are global.** The canvas is `#view` (and styled full
   screen); a control named the same quietly becomes the canvas. Check
   `index.html` before naming a new element.
@@ -82,8 +92,8 @@ would otherwise rediscover.
   (`.github/workflows/pr-preview.yml`); name what to check there.
 - Deploys go to the `gh-pages` branch: main at the root, previews under
   `pr-preview/`. The custom domain (exo.cafe) is set in the repo's Pages
-  settings, and GitHub writes `CNAME` to the `gh-pages` branch itself. The
-  repo has no `CNAME` and shouldn't get one; the main deploy's
+  settings, and GitHub writes `CNAME` to the `gh-pages` branch itself.
+  Main also has a `CNAME` (the owner's; leave it). The main deploy's
   `clean-exclude` keeps GitHub's `CNAME` and the previews. Drop either
   entry and a deploy deletes it (losing the domain or every preview).
 - Report what you couldn't verify (a real camera, a phone, real GPUs).

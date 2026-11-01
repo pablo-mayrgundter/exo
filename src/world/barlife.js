@@ -21,7 +21,16 @@ import { makeRezPad } from './rezpad.js'
 export function makeBarLife({ bar, avatar, mist, me, say, note, respond }) {
   const state = new BarState(bar)
   const glasses = {} // seat → { glass, drink }
-  let remote = {} // seat → { drink, level, who }: other visitors' open drinks, from presence
+  let remote = {} // seat → { drink, level, who, owner, age }: other visitors' glasses, from presence
+  // With others in the room: is this browser running Max (the host)? If
+  // not, `maxState` is the host's snapshot to show, orders and words for
+  // him go out through `net`, and drinks come back from the host.
+  let host = true
+  let maxState = null
+  const net = { order() {}, heard() {}, poured() {}, cleared() {}, maxSay() {} }
+  let pending = null // { seat, drink, at }: an order sent to the host, not yet poured
+  const orderedBy = {} // seat → the presence id of a remote customer (on the host)
+  const clearedRemote = {} // seat → when Max took a remote visitor's empty (ms)
   let seat = null
   let lastGiven = null // Max's donated half-cycles at the last tick seen
   let saveAt = 0, offered = false, greeted = false
@@ -30,7 +39,9 @@ export function makeBarLife({ bar, avatar, mist, me, say, note, respond }) {
   const shown = {} // seat → the level drawn, easing toward the real one
   const pad = makeRezPad(bar)
   const bartender = new Bartender({
-    avatar: bar.max, bar, state, say,
+    avatar: bar.max, bar, state,
+    // What he says while working, everyone in the room hears.
+    say: (t) => { say(t); net.maxSay(t) },
     onPoured: (s, drink, glass) => {
       if (glass) {
         if (glasses[s] && glasses[s].glass !== glass) glasses[s].glass.dispose()
@@ -39,6 +50,17 @@ export function makeBarLife({ bar, avatar, mist, me, say, note, respond }) {
         glass.setLevel(shown[s])
       } else placeGlass(s, drink)
       if (s === seat) offered = false
+      // Poured for someone in another browser: it's theirs to keep (their
+      // state, their tab); here it's a remote glass, kept up by presence.
+      const g = state.glasses[s]
+      if (g && g.by !== me.name) {
+        state.clear(s)
+        state.tab.drinks = Math.max(0, state.tab.drinks - 1)
+        glasses[s].remote = true
+        remote[s] = { seat: s, drink: drink.id, level: 1, who: g.by, owner: orderedBy[s], keep: Date.now() + 3000 }
+        net.poured(s, drink.id, orderedBy[s])
+        delete orderedBy[s]
+      }
     },
     // The glasses Max handles: rezzed in on the pad, taken off the counter
     // (and out of the bar's state) to be de-rezzed, set down to be poured.
@@ -47,7 +69,16 @@ export function makeBarLife({ bar, avatar, mist, me, say, note, respond }) {
       make: (drink) => makeGlass(drink),
       take(s) {
         const g = glasses[s]
-        if (!g || g.remote) return null
+        if (!g) return null
+        if (g.remote) {
+          // Someone else's empty: tell them it's gone, and don't let their
+          // presence put it back before they've heard.
+          clearedRemote[s] = Date.now()
+          net.cleared(s, remote[s]?.owner)
+          delete glasses[s]
+          delete remote[s]
+          return g.glass
+        }
         if (sip?.seat === s) sip = null
         delete glasses[s]
         delete shown[s]
@@ -57,6 +88,14 @@ export function makeBarLife({ bar, avatar, mist, me, say, note, respond }) {
       place(s, glass) {
         glass.group.position.copy(bar.glassAt(bar.seats[s]))
         glass.group.quaternion.identity()
+      },
+      /** Is there a glass at that stool, anyone's? */
+      at: (s) => !!glasses[s],
+      /** Stools with an empty that's stood `ms`: ours, and other visitors'. */
+      empties(ms) {
+        const out = state.empties(ms)
+        for (const r of Object.values(remote)) if (r.level <= 0 && (r.age ?? 0) * 1000 >= ms && glasses[r.seat]) out.push(r.seat)
+        return out
       },
     },
   })
@@ -95,6 +134,12 @@ export function makeBarLife({ bar, avatar, mist, me, say, note, respond }) {
 
   function mine(s) { return state.glasses[s]?.by === me.name && state.level(s) > 0 }
 
+  /** The stool where your glass stands, full or empty, or null. */
+  function myGlassSeat() {
+    for (const [s, g] of Object.entries(state.glasses)) if (g.by === me.name) return Number(s)
+    return null
+  }
+
   /** The stool where you have an unfinished drink (your open tab), or null. */
   function openSeat() {
     for (const s of Object.keys(state.glasses)) if (mine(Number(s))) return Number(s)
@@ -124,7 +169,7 @@ export function makeBarLife({ bar, avatar, mist, me, say, note, respond }) {
     freeSeatNear(p, taken) {
       let best = -1, bd = 1.3
       for (const s of bar.seats) {
-        if (taken.has(s.index) || remote[s.index]) continue
+        if (taken.has(s.index) || remote[s.index]?.level > 0) continue
         const d = Math.hypot(p.x - s.x, p.z - s.z)
         if (d < bd) { bd = d; best = s.index }
       }
@@ -136,7 +181,8 @@ export function makeBarLife({ bar, avatar, mist, me, say, note, respond }) {
       avatar.sit()
       const s = bar.seats[i]
       avatar.group.position.set(s.x, s.y - 0.88, s.z)
-      bartender.heard(i, performance.now() / 1000)
+      if (host) bartender.heard(i, performance.now() / 1000)
+      else net.heard(i)
       const r = state.regular(me.name)
       if (!greeted) {
         greeted = true
@@ -159,7 +205,11 @@ export function makeBarLife({ bar, avatar, mist, me, say, note, respond }) {
       if (seat === null) return false
       const d = drinkById(id)
       if (mine(seat)) { say(`Finish that one first; it's still ${Math.round(state.level(seat) * 100)}% full.`); return false }
-      if (!bartender.order(seat, id, me.name)) { say('Coming, coming.'); return false }
+      if (!host) {
+        if (pending?.seat === seat) { say('Coming, coming.'); return false }
+        pending = { seat, drink: id, at: performance.now() / 1000 }
+        net.order(seat, id, me.name)
+      } else if (!bartender.order(seat, id, me.name)) { say('Coming, coming.'); return false }
       state.regular(me.name).lastDrink = id
       state.save()
       say(`One ${d.name}, coming up.`)
@@ -181,17 +231,18 @@ export function makeBarLife({ bar, avatar, mist, me, say, note, respond }) {
         setTimeout(() => say(`Tonight: ${DRINKS.map((x) => `${x.name} (${x.note})`).join('; ')}. Each one's paid in donated cycles.`), 900)
         return true
       }
-      bartender.heard(seat, time)
+      if (host) bartender.heard(seat, time)
+      else net.heard(seat)
       const reply = respond(text)
       setTimeout(() => {
-        if (bartender.attending(seat)) say(reply)
+        if (!host || bartender.attending(seat)) say(reply)
         else say('Hang on, I\'m pouring.')
       }, 900 + Math.random() * 900)
       return true
     },
 
     /** True when Max isn't in a conversation, so he can think aloud. */
-    get idle() { return !bartender.talking },
+    get idle() { return !host || !bartender.talking },
 
     /**
      * @param {number} dt
@@ -199,10 +250,17 @@ export function makeBarLife({ bar, avatar, mist, me, say, note, respond }) {
      * @param {{seat: number, name: string}[]} others remote visitors on stools
      */
     update(dt, time, others) {
-      const customers = others.map((o) => ({ seat: o.seat, name: o.name, drinking: state.level(o.seat) > 0 }))
+      const customers = others.map((o) => ({ seat: o.seat, name: o.name, drinking: (remote[o.seat]?.level ?? state.level(o.seat)) > 0 }))
       if (seat !== null) customers.push({ seat, name: me.name, drinking: state.level(seat) > 0 })
-      bartender.update(dt, time, customers)
+      if (host) bartender.update(dt, time, customers)
+      else bartender.puppet(dt, time, maxState)
       pad.update(dt, time)
+      // An order the host hasn't poured yet goes again now and then (the host
+      // may have changed, or not heard).
+      if (!host && pending && time - pending.at > 10) {
+        if (seat !== pending.seat) pending = null
+        else { pending.at = time; net.order(pending.seat, pending.drink, me.name) }
+      }
       settle()
       // A sip: the gulp when the glass reaches your mouth, and the glass back
       // on the counter at the end.
@@ -249,18 +307,75 @@ export function makeBarLife({ bar, avatar, mist, me, say, note, respond }) {
 
     get sipping() { return !!sip },
 
-    /** Your open drink, for presence: { seat, drink, level }, or null. */
+    /**
+     * Your glass, for presence: { seat, drink, level }, and how long it's
+     * stood empty (`age`, seconds), so the host's Max clears it; or null.
+     */
     openDrink() {
-      const s = openSeat()
-      return s === null ? null : { seat: s, drink: state.glasses[s].drink, level: +state.level(s).toFixed(3) }
+      const s = myGlassSeat()
+      if (s === null) return null
+      const g = state.glasses[s], level = +state.level(s).toFixed(3)
+      return { seat: s, drink: g.drink, level, ...(level <= 0 ? { age: Math.round((Date.now() - (g.emptied ?? 0)) / 1000) } : {}) }
+    },
+
+    // --- Sharing Max with the room (main.js wires `net` to presence) ---
+
+    /** The hooks out to the room: order, heard, poured, cleared, maxSay. */
+    net,
+    get host() { return host },
+    /** Becomes the host (runs Max) or a guest (shows the host's Max). */
+    setHost(h) {
+      if (h === host) return
+      host = h
+      bartender.release()
+      maxState = null
+      if (host && pending) { bartender.order(pending.seat, pending.drink, me.name); pending = null }
+    },
+    /** The host's Max, to show (a guest's). */
+    setMax(s) { maxState = s },
+    /** The host's Max, to send (the host's). */
+    maxSnapshot() { return bartender.snapshot() },
+    /** On the host: an order from someone in another browser. */
+    remoteOrder(s, drink, by, from) {
+      if (!host || !drinkById(drink)) return
+      if (bartender.order(s, drink, by)) orderedBy[s] = from
+    },
+    /** On the host: someone in another browser spoke to Max from a stool. */
+    remoteHeard(s) { if (host) bartender.heard(s, performance.now() / 1000) },
+    /** On a guest: the host's Max poured your drink. */
+    poured(s, drink) {
+      const d = drinkById(drink)
+      if (!d || (pending && pending.seat !== s)) return
+      pending = null
+      state.glasses[s] = { drink: d.id, consumed: 0, by: me.name, poured: Date.now() }
+      state.tab.drinks++
+      state.save()
+      placeGlass(s, d)
+      if (s === seat) offered = false
+    },
+    /** On a guest: the host's Max took your empty away. */
+    cleared(s) {
+      if (state.glasses[s]?.by !== me.name || state.level(s) > 0) return
+      if (sip?.seat === s) sip = null
+      glasses[s]?.glass.dispose()
+      delete glasses[s]
+      delete shown[s]
+      state.clear(s)
     },
 
     /** Other visitors' open drinks, from presence: [{ seat, drink, level, who }]. */
     setRemote(list) {
       const next = {}
-      for (const d of list) if (d && drinkById(d.drink) && !(state.glasses[d.seat] && mine(d.seat))) next[d.seat] = d
+      const now = Date.now()
+      for (const d of list) {
+        if (!d || !drinkById(d.drink) || state.glasses[d.seat]?.by === me.name) continue
+        if (now - (clearedRemote[d.seat] ?? 0) < 10000) continue // Max just took it
+        next[d.seat] = d
+      }
+      // A glass just poured for someone stays while their presence catches up.
+      for (const [s, r] of Object.entries(remote)) if (!next[s] && r.keep > now) next[s] = r
       // Their glasses on the counter, kept in step with what they publish.
-      for (const s of Object.keys(remote)) if (!next[s] && glasses[s] && !state.glasses[s]) { bar.group.remove(glasses[s].glass.group); delete glasses[s] }
+      for (const s of Object.keys(remote)) if (!next[s] && glasses[s] && !state.glasses[s]) { glasses[s].glass.dispose(); delete glasses[s] }
       for (const [s, d] of Object.entries(next)) {
         if (!glasses[s] || glasses[s].drink.id !== d.drink || glasses[s].remote !== true) { placeGlass(Number(s), drinkById(d.drink)); glasses[s].remote = true }
         glasses[s].glass.setLevel(d.level)
@@ -275,7 +390,7 @@ export function makeBarLife({ bar, avatar, mist, me, say, note, respond }) {
       const g = state.glasses[s]
       const glass = mineHere && g ? { name: drinkById(g.drink).name, level: state.level(s) }
         : r ? { name: drinkById(r.drink).name, level: r.level } : null
-      return { up: mineHere || !!r || !!occupiedBy, mine: mineHere, who: r?.who ?? occupiedBy, glass }
+      return { up: mineHere || r?.level > 0 || !!occupiedBy, mine: mineHere, who: r?.who ?? occupiedBy, glass }
     },
 
     /** The tab: drinks, the cycles paid for them, and the half-cycles still owed. */

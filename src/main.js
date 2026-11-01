@@ -29,6 +29,7 @@ import { makeEliza } from './npc/eliza.js'
 import { MAX_SCRIPT } from './npc/max-script.js'
 import { makeJukebox } from './world/jukebox.js'
 import { Presence, BroadcastTransport } from './net/presence.js'
+import { P2PTransport, MultiTransport } from './net/p2p.js'
 import { Controls } from './controls.js'
 import { MANIFESTO, MIST, MAX } from './content.js'
 
@@ -182,7 +183,39 @@ let entered = false
 let riding = false
 
 // --- Others ---
-const presence = new Presence(new BroadcastTransport(), { id: me.id })
+// Tabs of this browser over BroadcastChannel; other browsers peer to peer
+// over WebRTC (Trystero), unless ?p2p=0. ?room= picks a room (default: the
+// bar); ?relay=wss://… signals through your own relay instead of Nostr.
+const ROOM = params.get('room') || 'bar'
+const p2p = params.get('p2p') === '0' ? null : new P2PTransport({ room: ROOM, relay: params.get('relay') })
+const presence = new Presence(new MultiTransport([new BroadcastTransport(), ...(p2p ? [p2p] : [])]), { id: me.id })
+// One Max for the room: whoever's been here longest runs him (the host),
+// and everyone else shows his moves, sends orders to the host and gets
+// their drinks back. `since` goes out with presence; ties go to the lower id.
+const SINCE = Date.now()
+let hostId = me.id
+function electHost() {
+  let id = me.id, since = SINCE
+  for (const [pid, p] of presence.peers) {
+    const s = p.state.since
+    if (typeof s === 'number' && (s < since || (s === since && pid < id))) { id = pid; since = s }
+  }
+  hostId = id
+  barLife.setHost(id === me.id)
+}
+barLife.net.order = (seat, drink, by) => presence.send('order', { seat, drink, by })
+barLife.net.heard = (seat) => presence.send('heard', { seat })
+barLife.net.poured = (seat, drink, to) => presence.send('poured', { seat, drink, to })
+barLife.net.cleared = (seat, to) => presence.send('cleared', { seat, to })
+barLife.net.maxSay = (text) => { if (presence.peers.size) presence.send('maxsay', { text }) }
+presence.on('msg', (m) => {
+  if (m.t === 'max' && m.id === hostId) barLife.setMax(m.s)
+  else if (m.t === 'maxsay' && m.id === hostId && !barLife.host && typeof m.text === 'string') maxSays(m.text.slice(0, 300))
+  else if (m.t === 'order') barLife.remoteOrder(m.seat, m.drink, String(m.by ?? '').slice(0, 40), m.id)
+  else if (m.t === 'heard') barLife.remoteHeard(m.seat)
+  else if (m.t === 'poured' && m.to === me.id) barLife.poured(m.seat, m.drink)
+  else if (m.t === 'cleared' && m.to === me.id) barLife.cleared(m.seat)
+})
 const others = new Map()
 // Social rez: you see others at the rez they share with you. Sharing
 // (on by default) reaches people within SHARE_RADIUS; anyone not sharing,
@@ -475,7 +508,7 @@ controls.onClick = (e) => {
 }
 
 // A handle for tests and the console: ?debug
-if (params.has('debug')) window.exo = { get clock() { return clock }, terminals, setView, barLife, sitDown, standUp, others, mist, vcpu, worker, car, life, show, mind, face, give, avatar, controls, bar, floor, abode, portal, camera, renderer, ledger, presence, chipFrame, cafe, get side() { return side }, get tick() { return tick } }
+if (params.has('debug')) window.exo = { get clock() { return clock }, p2p, terminals, setView, barLife, sitDown, standUp, others, mist, vcpu, worker, car, life, show, mind, face, give, avatar, controls, bar, floor, abode, portal, camera, renderer, ledger, presence, chipFrame, cafe, get side() { return side }, get tick() { return tick } }
 if (window.exo) window.exo.jukebox = jukebox
 
 // --- Loop ---
@@ -631,8 +664,10 @@ function frame() {
   if (now - lastPublish > 0.1) {
     lastPublish = now
     presence.sweep()
-    barLife.setRemote([...presence.peers.values()].filter((p) => p.state.scene === 'world' && p.state.drink)
-      .map((p) => ({ ...p.state.drink, who: p.state.name })))
+    electHost()
+    if (barLife.host && presence.peers.size) presence.send('max', { s: barLife.maxSnapshot() })
+    barLife.setRemote([...presence.peers].filter(([, p]) => p.state.scene === 'world' && p.state.drink)
+      .map(([id, p]) => ({ ...p.state.drink, who: p.state.name, owner: id })))
     for (const [id, p] of presence.peers) {
       const a = others.get(id)
       if (!a) continue
@@ -654,7 +689,7 @@ function frame() {
     }
     if (entered) {
       presence.publish({
-        name: me.name, hue: me.hue, tier: avatar.tier, shares: sharing, scene: side ? 'abode' : 'world',
+        name: me.name, hue: me.hue, tier: avatar.tier, shares: sharing, scene: side ? 'abode' : 'world', since: SINCE,
         p: pos.toArray(), yaw: heading, head: avatar.headAim.toArray().slice(0, 3),
         seat: barLife.seat, look: seatedNow ? [avatar.look.yaw, avatar.look.pitch] : null,
         drink: barLife.openDrink(),
@@ -733,6 +768,8 @@ function hud() {
   let near = 0
   for (const [, peer] of presence.peers) if (peer.state.scene === (side ? 'abode' : 'world') && avatar.group.position.distanceTo(new THREE.Vector3(...peer.state.p)) <= SHARE_RADIUS) near++
   const shared = sharing ? `shared with ${near} nearby` : 'not shared'
+  $('room').textContent = `Room ${ROOM} · ${presence.peers.size} here${presence.peers.size ? (barLife.host ? ' · you host Max' : '') : ''} · ` +
+    (!p2p ? 'this browser only' : p2p.error ? 'peer to peer unavailable' : `peer to peer, ${p2p.peers} linked`)
   $('alloc').textContent = al.smooth
     ? `Smooth body · full rez · ${shared}`
     : `Region ${al.label} · ${al.voxels} voxels · ${(ledger.credit / 2000).toFixed(1)}k cycles given · ${shared}`
