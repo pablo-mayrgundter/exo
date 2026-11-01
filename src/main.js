@@ -30,18 +30,29 @@ import { MAX_SCRIPT } from './npc/max-script.js'
 import { makeJukebox } from './world/jukebox.js'
 import { Presence, BroadcastTransport } from './net/presence.js'
 import { Controls } from './controls.js'
+import { touchMode, pixelRatio, promptFor, placeAbove, jukeboxLabels, fovFor } from './touch.js'
 import { MANIFESTO, MIST, MAX } from './content.js'
 
 const $ = (id) => document.getElementById(id)
 const params = new URLSearchParams(location.search)
 const NETMAP = 'https://pablo-mayrgundter.github.io/netmap/'
+// Phones and tablets get buttons for what keys do, and a lighter renderer
+// (touch.js). `?touch` / `?touch=0` force it either way.
+const touch = touchMode(params)
+document.documentElement.classList.toggle('touch', touch)
+/** The desktop wording, or the touch screen's. */
+const keysOr = (keys, taps) => (touch ? taps : keys)
 
 // --- Renderer ---
 const canvas = $('view')
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' })
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+// The scene renders into the composer's targets, so the canvas's own MSAA
+// only smooths the last full-screen pass: phones skip it.
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: !touch, powerPreference: 'high-performance' })
+renderer.setPixelRatio(pixelRatio(devicePixelRatio, touch, params.get('dpr')))
 renderer.setSize(innerWidth, innerHeight)
-const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 6000)
+// A phone held upright gets a wider view (touch.js); desktops keep 60°.
+const fovOf = (aspect) => (touch ? fovFor(aspect) : 60)
+const camera = new THREE.PerspectiveCamera(fovOf(innerWidth / innerHeight), innerWidth / innerHeight, 0.1, 6000)
 
 // --- Frames (cosmic.js): wall time and metres at the root ---
 const wall = new Frame('wall')
@@ -75,7 +86,7 @@ const floor = makeChipFloor(data, chipFrame, { unit: BODY_UM })
 world.add(floor.group)
 const bar = makeBar({ names: data.nodenames })
 world.add(bar.group)
-const jukebox = makeJukebox({ position: [-7.9, -6.2], rotation: 0.35, note }) // the north-west corner, by the back bar
+const jukebox = makeJukebox({ position: [-7.9, -6.2], rotation: 0.35, note, touch }) // the north-west corner, by the back bar
 bar.group.add(jukebox.group)
 bar.colliders.push(jukebox.collider)
 const gate = makeGate()
@@ -93,6 +104,12 @@ const composer = new EffectComposer(renderer)
 const renderPass = new RenderPass(world, camera)
 composer.addPass(renderPass)
 const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.75, 0.55, 0.22)
+if (touch) {
+  // On phones the glow renders at CSS pixels, as on a 1× desktop, rather
+  // than at the screen's: a third to a quarter of the fill, and it's soft anyway.
+  const setSize = bloom.setSize.bind(bloom)
+  bloom.setSize = (w, h) => setSize(w / renderer.getPixelRatio(), h / renderer.getPixelRatio())
+}
 if (params.get('fx') !== '0') composer.addPass(bloom)
 composer.addPass(new OutputPass())
 
@@ -337,6 +354,99 @@ $('mirror').addEventListener('click', async () => {
   }
 })
 
+// --- Touch screens: buttons for what keys do (touch.js) ---
+// An action button for E, a chat button for Enter, and the jukebox's
+// controls floating over the cabinet. The status panel folds; the layout
+// around it reads its height from --you-h.
+let jukeboxTapAt = -Infinity
+let chatOpen = false
+const hudInsets = { top: 0, bottom: 0 }
+const you = document.querySelector('.panel.you')
+function openChat(open) {
+  chatOpen = open
+  $('chat').classList.toggle('open', open)
+  document.documentElement.classList.toggle('chatting', open)
+  $('talk').setAttribute('aria-expanded', String(open))
+  if (open) $('say').focus()
+  else $('say').blur()
+}
+if (touch) {
+  $('touchbar').hidden = false
+  $('you-fold').hidden = false
+  $('say').placeholder = 'Say something'
+  $('hint').textContent = 'Drag the left half to walk, the right half to look · pinch to zoom out over the die · tap the Life wall, the chip tokens, the jukebox'
+  $('act').addEventListener('click', () => interact())
+  // Keep the input focused when the tap is the one that closes the chat.
+  $('talk').addEventListener('pointerdown', (e) => e.preventDefault())
+  $('talk').addEventListener('click', () => openChat(!chatOpen))
+  $('say').addEventListener('blur', () => { if (chatOpen) openChat(false) })
+  $('jukebox-ctl').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-jb]')
+    if (!b) return
+    jukebox[b.dataset.jb]()
+    jukeboxTapAt = performance.now()
+    labelJukeboxCtl()
+  })
+  let folded = true
+  try { folded = localStorage.getItem('exo.cafe/you-folded') !== 'no' } catch { /* folded */ }
+  const fold = (f) => {
+    folded = f
+    you.classList.toggle('folded', f)
+    $('you-fold').setAttribute('aria-expanded', String(!f))
+    $('you-fold').textContent = f ? 'More' : 'Less'
+    try { localStorage.setItem('exo.cafe/you-folded', f ? 'yes' : 'no') } catch { /* fine */ }
+  }
+  $('you-fold').addEventListener('click', () => fold(!folded))
+  fold(folded)
+  const measure = () => {
+    hudInsets.top = document.querySelector('.bar.top').getBoundingClientRect().bottom
+    hudInsets.bottom = innerHeight - you.getBoundingClientRect().top
+    document.documentElement.style.setProperty('--top-h', `${Math.round(hudInsets.top)}px`)
+    document.documentElement.style.setProperty('--you-h', `${Math.round(hudInsets.bottom)}px`)
+  }
+  const ro = new ResizeObserver(measure)
+  ro.observe(you)
+  ro.observe(document.querySelector('.bar.top'))
+  addEventListener('resize', measure)
+  measure()
+  // iOS Safari zooms the page on a pinch whatever the viewport says; the
+  // scene wants the pinch.
+  for (const t of ['gesturestart', 'gesturechange']) document.addEventListener(t, (e) => e.preventDefault(), { passive: false })
+}
+const jukeboxAt = new THREE.Vector3()
+let jukeboxCtlSize = null
+/** The jukebox's buttons say what a tap would do: Play or Pause, Mute or Unmute. */
+function labelJukeboxCtl() {
+  const l = jukeboxLabels(jukebox.audio)
+  const [play, , mute] = $('jukebox-ctl').children
+  if (play.textContent === l.play && mute.textContent === l.mute) return
+  setText(play, l.play)
+  setText(mute, l.mute)
+  jukeboxCtlSize = null // measure again
+}
+/** Per frame on a touch screen: the action button and the jukebox's controls. */
+function touchHud(button, fresh) {
+  const act = $('act')
+  act.hidden = !entered || !button
+  if (button) setText(act, button)
+  act.classList.toggle('fresh', !!button && fresh)
+  // The jukebox's controls, over the cabinet while you're by it or just tapped it.
+  const ctl = $('jukebox-ctl')
+  const p = avatar.group.position
+  let show = entered && side === 0 && bar.contains(p.x, p.z) &&
+    (jukebox.near(avatar.group.getWorldPosition(meAt), 4.5) || performance.now() - jukeboxTapAt < 8000)
+  if (show) {
+    labelJukeboxCtl()
+    if (ctl.hidden) { ctl.hidden = false; jukeboxCtlSize = null }
+    jukeboxCtlSize ??= { w: ctl.offsetWidth, h: ctl.offsetHeight }
+    const at = placeAbove(jukebox.top(jukeboxAt).project(camera), { w: innerWidth, h: innerHeight }, jukeboxCtlSize,
+      { top: hudInsets.top + 8, right: 8, bottom: hudInsets.bottom + 8, left: 8 })
+    ctl.style.transform = `translate(${at.x}px, ${at.y}px)`
+    show = at.visible
+  }
+  ctl.hidden = !show
+}
+
 $('chat').addEventListener('submit', (e) => {
   e.preventDefault()
   const text = $('say').value.trim()
@@ -351,7 +461,7 @@ $('chat').addEventListener('submit', (e) => {
 })
 addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT') return
-  if (e.key === 'Enter' && entered) { e.preventDefault(); $('say').focus() }
+  if (e.key === 'Enter' && entered) { e.preventDefault(); if (touch) openChat(true); else $('say').focus() }
   if (e.code === 'KeyE') interact()
   if (e.code === 'KeyV' && entered) setView(view[viewKey()] === 'first' ? 'third' : 'first')
   // 1–4 on a stool orders from the terminal's menu.
@@ -364,6 +474,7 @@ addEventListener('keydown', (e) => {
 })
 
 function note(text) { $('note').textContent = text }
+function setText(el, text) { if (el.textContent !== text) el.textContent = text }
 function pick(a) { return a[Math.floor(Math.random() * a.length)] }
 let lastMax = 0
 let captionTimer = 0
@@ -413,9 +524,12 @@ function sitDown(i) {
   controls.minDist = 2.2
   controls.dist = 3
   controls.yaw = 0
-  controls.pitch = 0.08
+  // On a phone, look down a little: on its small screen the glass and the
+  // terminal are otherwise below the frame or behind the panel.
+  controls.pitch = touch ? 0.3 : 0.08
   setView(view.seated)
-  note('Seated. Look around with the mouse; order on the terminal (or press 1–4), or just ask Max. Click your glass to drink. E to stand.')
+  note(keysOr('Seated. Look around with the mouse; order on the terminal (or press 1–4), or just ask Max. Click your glass to drink. E to stand.',
+    'Seated. Drag to look around; tap a drink on the terminal, or just ask Max. Tap your glass to drink.'))
 }
 function standUp() {
   const s = bar.seats[barLife.seat]
@@ -428,7 +542,7 @@ function standUp() {
 }
 function board() {
   riding = true
-  note('Aboard the Art Car. It drives as fast as its 6502 runs: give it cycles ($) to speed up. E to get off.')
+  note(`Aboard the Art Car. It drives as fast as its 6502 runs: give it cycles ($) to speed up.${keysOr(' E to get off.', '')}`)
 }
 function alight() {
   riding = false
@@ -465,6 +579,13 @@ controls.onClick = (e) => {
     while (o && !o.userData.job) o = o.parent
     if (o) { give(o.userData.job); return }
   }
+  // The jukebox, from inside the bar: a tap plays or pauses.
+  const p = avatar.group.position
+  if (bar.contains(p.x, p.z) && jukebox.hit(ray)) {
+    jukebox.toggle()
+    jukeboxTapAt = performance.now()
+    return
+  }
   const cellHit = ray.intersectObject(bar.life)[0]
   if (cellHit?.instanceId == null) return
   const cell = cellHit.instanceId
@@ -488,6 +609,7 @@ const fwd = new THREE.Vector3(), right = new THREE.Vector3()
 
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight
+  camera.fov = fovOf(camera.aspect)
   camera.updateProjectionMatrix()
   renderer.setSize(innerWidth, innerHeight)
   composer.setSize(innerWidth, innerHeight)
@@ -612,15 +734,20 @@ function frame() {
   gate.update(now, side === 0 ? pos : null)
   const nearCar = side === 0 && pos.distanceTo(car.group.position) < 4.5
   const nearSeat = side === 0 && !seatedNow && !riding && barLife.freeSeatNear(pos, takenSeats()) >= 0
-  const prompt = riding ? 'E · step off the Art Car'
-    : seatedNow ? (barLife.mine(barLife.seat) ? 'Click the glass to drink · E · stand up' : 'E · stand up') : nearSeat ? 'E · sit' : nearCar ? 'E · ride the Art Car' : gate.near ? 'E · jack into NetMap' : null
-  // The prompt shows in the middle for a few seconds, then docks in the panel.
-  if (prompt !== promptText) { promptText = prompt; promptSince = now }
+  const action = riding ? 'step off the Art Car' : seatedNow ? 'stand up' : nearSeat ? 'sit' : nearCar ? 'ride the Art Car' : gate.near ? 'jack into NetMap' : null
+  const tip = seatedNow && barLife.mine(barLife.seat) ? 'Click the glass to drink' : null
+  const { text: prompt, button } = promptFor({ action, tip }, touch)
+  // The prompt shows in the middle for a few seconds, then docks in the
+  // panel. On a touch screen the action is a button instead, and the tip
+  // just fades.
+  if (`${prompt}|${button}` !== promptText) { promptText = `${prompt}|${button}`; promptSince = now }
   const centred = entered && prompt && now - promptSince < 3
   $('prompt').hidden = !centred
   if (prompt) $('prompt').textContent = prompt
-  $('keyhint').hidden = !entered || !prompt || centred
+  $('keyhint').hidden = touch || !entered || !prompt || centred
   if (prompt) $('keyhint').textContent = prompt
+  controls.walkable = !seatedNow && !riding
+  const freshPrompt = now - promptSince < 3
   for (const c of coins) c.userData.setLit(mist.get(c.userData.job).state === 'donated')
   coins.forEach((c, i) => { c.position.y = coinY[i] + Math.sin(now * 2 + i) * 0.08; c.rotation.y = now })
 
@@ -697,6 +824,7 @@ function frame() {
   camera.near = (fpv ? 0.02 : 0.05) * unit
   camera.far = Math.max(600, controls.dist * 4) * unit
   camera.updateProjectionMatrix()
+  if (touch) touchHud(button, freshPrompt)
   world.fog.density = (controls.dist > 60 ? 0.00008 : 0.0009) / BODY_UM
 
   portal.render(renderer, camera, side, now)
