@@ -126,6 +126,12 @@ button { font-family: var(--mono); }
 .thread li.me b { color: var(--text); }
 .thread li.max b { color: var(--orange-soft); }
 .thread li.note { color: var(--muted); font-style: italic; }
+.thread li.aside span { color: var(--muted); }
+.thread li.divider {
+  display: flex; align-items: center; gap: 8px; margin: 4px 0; color: var(--orange-soft);
+  font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+}
+.thread li.divider::before, .thread li.divider::after { content: ''; flex: 1; border-top: 1px solid var(--orange); opacity: 0.6; }
 .prompt {
   position: fixed; z-index: 2; left: 50%; top: 58%; transform: translateX(-50%);
   padding: 8px 16px; background: rgba(5, 10, 31, 0.85); border: 1px solid var(--green); color: var(--green);

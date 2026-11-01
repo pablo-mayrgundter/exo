@@ -254,6 +254,10 @@ the shape of the net.*
 ### E4.3 Chat ✅ / 🔜 (T5)
 - [x] Speech bubbles over avatars; Enter to talk
 - [x] A thread of the conversation (`src/chat/thread.js`): everyone's words, Max's (while you're in the bar), and who came and went, timestamped, kept per room in this browser. On a desktop it opens above the input (Enter, or its button, with a count of unread lines; Esc closes it); on a phone the chat button opens it with the input as a sheet, which stays open as you talk
+- [x] Catching up: the thread remembers where you last read (per room, through reloads and background tabs); opening it, or coming back to the tab with it open, puts a "New since you last read" divider above the first unread line. Unread is others' words and Max talking to you; his thinking aloud, greetings and thanks are in the thread but don't count
+- [x] The tab shows what's waiting (`src/notify.js`): "(3) Exo Cafe" in its title and a badge on its icon, until you've read it. Sources other than chat can report counts too
+- [x] A background tab stays in the room: it sends an away heartbeat (every 2 s, or as often as the browser allows), others keep it for a couple of minutes and label it "away", and it hands Max to a visible peer
+- [ ] More notification sources: your name mentioned, a drink poured for you, a receipt for a frame you powered; a system notification (with permission) for a mention while the tab's in the background
 - [ ] History for latecomers: peers have only what they heard; a peer that's been here longest could hand its thread to newcomers, until a Matrix room keeps it
 - [ ] Chat history from the Matrix room; moderation tools for hosts (mute, and a report that reaches them)
 

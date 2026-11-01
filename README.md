@@ -113,7 +113,10 @@ Everyone at exo.cafe shares a room, peer to peer: browsers find each other
 through public Nostr relays ([Trystero](https://github.com/dmotz/trystero)),
 then talk directly over encrypted WebRTC data channels, with nothing to
 deploy. Peers see each other's IP addresses, as in any peer-to-peer mesh.
-The visitor who's been there longest runs Max for everyone. `?room=name`
+The visitor who's been there longest runs Max for everyone. Leave the tab in
+the background to keep donating: you stay in the room as *away*, and the
+tab's title and icon count what's been said since you last read the
+conversation, which marks where you left off. `?room=name`
 opens a private room, `?p2p=0` keeps to this browser's tabs, and
 `?relay=wss://…` signals through your own relay
 (`@trystero-p2p/ws-relay`).

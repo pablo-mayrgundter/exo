@@ -361,7 +361,7 @@ export function makeBarLife({ bar, avatar, mist, me, say, note, respond }) {
     /** On a guest: the host's Max poured your drink. */
     poured(s, drink) {
       const d = drinkById(drink)
-      if (!d || (pending && pending.seat !== s)) return
+      if (!d || !pending || pending.seat !== s) return // only a drink you're waiting for
       pending = null
       state.glasses[s] = { drink: d.id, consumed: 0, by: me.name, poured: Date.now() }
       state.tab.drinks++

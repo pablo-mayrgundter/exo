@@ -60,11 +60,15 @@ export class Presence {
 
   say(text) { this.transport.send({ t: 'say', id: this.self.id, n: this.n++, text }) }
 
-  /** Forgets peers not heard from in a while. */
-  sweep(timeoutMs = 5000) {
+  /**
+   * Forgets peers not heard from in a while: a few seconds, or a couple of
+   * minutes for one whose tab is in the background (`away`), which sends a
+   * slow heartbeat instead of its usual ten states a second.
+   */
+  sweep(timeoutMs = 5000, awayMs = 150000) {
     const now = performance.now()
     for (const [id, p] of this.peers) {
-      if (now - p.seen > timeoutMs) {
+      if (now - p.seen > (p.state.away ? awayMs : timeoutMs)) {
         this.peers.delete(id)
         this.listeners.leave.forEach((f) => f({ id }))
       }
