@@ -158,7 +158,12 @@ export function makeJukebox({ audio = new Player(), position = [0, 0], rotation 
     else if (what === 'mute') note(audio.muted ? 'Jukebox muted. M to unmute.' : 'Jukebox unmuted.')
   }
 
-  const world = new THREE.Vector3()
+  const world = new THREE.Vector3(), worldScale = new THREE.Vector3()
+  /** Distance on the floor from a world-space point, in the cabinet's own units (the bar's body units). */
+  const across = (pos) => {
+    group.getWorldPosition(world)
+    return Math.hypot(pos.x - world.x, pos.z - world.z) / group.getWorldScale(worldScale).x
+  }
   const jb = {
     group, collider, audio,
     toggle() { tryAudio(() => audio.toggle()) },
@@ -174,11 +179,8 @@ export function makeJukebox({ audio = new Player(), position = [0, 0], rotation 
       else return false
       return true
     },
-    /** True within reach of the cabinet (`pos` in world space). */
-    near(pos, reach = 2.5) {
-      group.getWorldPosition(world)
-      return Math.hypot(pos.x - world.x, pos.z - world.z) < reach
-    },
+    /** True within reach of the cabinet (`pos` in world space, `reach` in the bar's units). */
+    near(pos, reach = 2.5) { return across(pos) < reach },
     /**
      * @param {number} dt
      * @param {THREE.Vector3 | null} [listener] the listener's world position, to fade
@@ -189,8 +191,7 @@ export function makeJukebox({ audio = new Player(), position = [0, 0], rotation 
       if (listener !== undefined) {
         let g = 0.08 // elsewhere (the abode): faintly, through the arch
         if (listener) {
-          group.getWorldPosition(world)
-          const d = Math.hypot(listener.x - world.x, listener.z - world.z)
+          const d = across(listener)
           g = d < 11 ? 1 : 1 / (1 + ((d - 11) / 10) ** 2) // the whole bar, then fading down the street
         }
         audio.setSpace(g)

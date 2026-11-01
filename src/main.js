@@ -483,6 +483,7 @@ const clock = new THREE.Clock()
 let lastPublish = 0, lastHud = 0, greeted = false
 let promptText = null, promptSince = 0
 const prevPos = new THREE.Vector3()
+const meAt = new THREE.Vector3() // your world position, for the jukebox
 const fwd = new THREE.Vector3(), right = new THREE.Vector3()
 
 addEventListener('resize', () => {
@@ -606,7 +607,7 @@ function frame() {
   bar.exterior.visible = !inside
   floor.update(dt)
   bar.update(dt, floor, tick, now)
-  jukebox.update(dt, side === 0 ? pos : null)
+  jukebox.update(dt, side === 0 ? avatar.group.getWorldPosition(meAt) : null)
   abode.update(abodeFrame.time, now)
   gate.update(now, side === 0 ? pos : null)
   const nearCar = side === 0 && pos.distanceTo(car.group.position) < 4.5
