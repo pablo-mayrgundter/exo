@@ -76,11 +76,34 @@ describe('the 8-bit voice', () => {
     expect(tilt(d)).toBeGreaterThan(tilt(b) * 3)
   })
 
-  it('comes out on a 7-bit grid, held at 16 kHz', () => {
+  it('comes out on an 8-bit grid, held at 22 kHz', () => {
     const { y } = run(saw(200, 0.2))
-    for (let i = 4800; i < 5000; i++) expect(Math.abs(y[i] * 64 - Math.round(y[i] * 64))).toBeLessThan(1e-4)
+    for (let i = 4800; i < 5000; i++) expect(Math.abs(y[i] * 128 - Math.round(y[i] * 128))).toBeLessThan(1e-4)
     let changes = 0
     for (let i = 4801; i < 9600; i++) if (y[i] !== y[i - 1]) changes++
-    expect(changes).toBeLessThanOrEqual(4800 / 3 + 1)
+    expect(changes).toBeLessThanOrEqual(4800 / 2 + 1)
+  })
+
+  it('moves the formants up or down when asked (who you sound like, not what you say)', () => {
+    // Band by band from 600 Hz up: shifted up is louder there, shifted down quieter.
+    const vowel = saw(140, 0.5)
+    const dB = (y, f) => 10 * Math.log10(bandEnergy(y.subarray(12000), f))
+    const plain = run(vowel).y, up = run(vowel, { formant: 12 }).y, down = run(vowel, { formant: -12 }).y
+    for (const f of [600, 1200, 2400, 4800]) {
+      expect(dB(up, f) - dB(plain, f)).toBeGreaterThan(2)
+      expect(dB(plain, f) - dB(down, f)).toBeGreaterThan(1.5)
+    }
+  })
+
+  it('holds the pitch through a short gap in the tracking, so a vowel does not flip to noise', () => {
+    const v = new ChipVoice(SR)
+    const out = new Float32Array(128)
+    const feed = (x) => { for (let i = 0; i + 128 <= x.length; i += 128) v.process(x.subarray(i, i + 128), out) }
+    feed(saw(150, 0.2))
+    expect(v.voicedWant).toBe(1)
+    feed(noise(0.025)) // 25 ms of hiss in the middle of the vowel
+    expect(v.voicedWant).toBe(1)
+    feed(noise(0.1)) // a real unvoiced sound: hand over to the noise carrier
+    expect(v.voicedWant).toBe(0)
   })
 })

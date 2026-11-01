@@ -34,7 +34,7 @@ import { Controls } from './controls.js'
 import { touchMode, pixelRatio, promptFor, placeAbove, jukeboxLabels, fovFor } from './touch.js'
 import { Thread, mountThread } from './chat/thread.js'
 import { makeNotifier } from './notify.js'
-import { makeVoice } from './voice/voice.js'
+import { makeVoice, VOICES } from './voice/voice.js'
 import { MANIFESTO, MIST, MAX } from './content.js'
 
 const $ = (id) => document.getElementById(id)
@@ -212,7 +212,7 @@ const presence = new Presence(new MultiTransport([new BroadcastTransport(), ...(
 // Voice over the same peer connections (voice/voice.js): off until you turn it on.
 const voice = makeVoice({ transport: p2p, id: me.id })
 let voiceMode = 'chip'
-try { voiceMode = localStorage.getItem('exo.cafe/voice-mode') === 'real' ? 'real' : 'chip' } catch { /* 8-bit */ }
+try { const m = localStorage.getItem('exo.cafe/voice-mode'); if (VOICES[m]) voiceMode = m } catch { /* 8-bit */ }
 voice.setMode(voiceMode)
 // Audio may start only after a gesture on the page.
 for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => voice.unlock(), { passive: true })
@@ -435,16 +435,16 @@ function showVoice() {
   b.setAttribute('aria-pressed', String(voice.on))
   b.textContent = voice.on ? 'MIC' : 'Voice'
   b.title = voice.on ? 'Your mic is on: people near you hear you (click to turn it off)' : 'Talk to the people near you (your mic)'
-  $('voicemode').textContent = voiceMode === 'chip' ? '8-bit' : 'Real voice'
-  $('voicemode').setAttribute('aria-pressed', String(voiceMode === 'chip'))
+  $('voicemode').textContent = VOICES[voiceMode].label
+  $('voicemode').setAttribute('aria-pressed', String(voiceMode !== 'real'))
 }
 $('voice').addEventListener('click', async () => {
   const b = $('voice')
   b.disabled = true
   try {
     const on = await voice.set(!voice.on)
-    if (on) note(voiceMode === 'chip'
-      ? 'Mic on, 8-bit: people near you hear a chiptune voice made from yours. Your own voice stays on this machine.'
+    if (on) note(voiceMode !== 'real'
+      ? `Mic on, ${VOICES[voiceMode].label}: people near you hear a chiptune voice made from yours. Your own voice stays on this machine.`
       : 'Mic on: people near you hear your voice.')
     if (on && voice.mode !== voiceMode) { voiceMode = voice.mode; note('The 8-bit voice isn\'t available in this browser; you\'re on your own voice.') }
   } catch (e) {
@@ -455,7 +455,9 @@ $('voice').addEventListener('click', async () => {
   }
 })
 $('voicemode').addEventListener('click', () => {
-  voiceMode = voiceMode === 'chip' ? 'real' : 'chip'
+  // 8-bit, 8-bit high, 8-bit low, your own voice, and round again.
+  const order = Object.keys(VOICES)
+  voiceMode = order[(order.indexOf(voiceMode) + 1) % order.length]
   voice.setMode(voiceMode)
   try { localStorage.setItem('exo.cafe/voice-mode', voiceMode) } catch { /* fine */ }
   showVoice()

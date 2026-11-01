@@ -11,7 +11,17 @@
 // on every voice (yours too) moves the avatars' visor mouths.
 import workletUrl from './worklet.js?worker&url'
 
-const MODES = ['chip', 'real']
+/**
+ * The voices you can send: 8-bit ones (pitch and formants shifted, in
+ * semitones, so you're harder to recognize) and your own.
+ */
+export const VOICES = {
+  chip: { label: '8-bit', shift: 3, formant: 2 },
+  high: { label: '8-bit high', shift: 9, formant: 5 },
+  low: { label: '8-bit low', shift: -7, formant: -4 },
+  real: { label: 'Real voice' },
+}
+const isChip = (m) => VOICES[m]?.shift !== undefined
 
 /**
  * @param {{transport: {addStream: Function, removeStream: Function, onStream: Function} | null, id: string}} o
@@ -39,7 +49,8 @@ export function makeVoice({ transport, id }) {
     if (!src) return
     try { src.disconnect() } catch { /* not connected */ }
     try { chip?.disconnect() } catch { /* not connected */ }
-    const head = mode === 'chip' && chip ? chip : src
+    if (chip && isChip(mode)) chip.port.postMessage({ shift: VOICES[mode].shift, formant: VOICES[mode].formant })
+    const head = isChip(mode) && chip ? chip : src
     if (head === chip) src.connect(chip)
     head.connect(out)
     head.connect(meter)
@@ -53,7 +64,11 @@ export function makeVoice({ transport, id }) {
     src = c.createMediaStreamSource(mic)
     try {
       await c.audioWorklet.addModule(workletUrl)
-      chip = new AudioWorkletNode(c, 'chip-voice', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] })
+      const v = VOICES[isChip(mode) ? mode : 'chip']
+      chip = new AudioWorkletNode(c, 'chip-voice', {
+        numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
+        processorOptions: { shift: v.shift, formant: v.formant },
+      })
     } catch (e) {
       console.warn('exo: the 8-bit voice is unavailable here; sending your own', e)
       chip = null
@@ -124,10 +139,10 @@ export function makeVoice({ transport, id }) {
       await starting
       return on
     },
-    /** 'chip' (8-bit) or 'real'. */
+    /** One of VOICES: 'chip', 'high', 'low' (8-bit) or 'real'. */
     setMode(m) {
-      if (!MODES.includes(m)) return
-      if (m === 'chip' && on && !chip) return // no worklet here
+      if (!VOICES[m]) return
+      if (isChip(m) && on && !chip) return // no worklet here
       mode = m
       route()
     },
