@@ -53,9 +53,17 @@ real computer, a bartender, and other people.*
   - [ ] 🔜 Map more of the chip into the room: the ALU's bus as the bar top, the register file as bottles
 - **S1.1.3** As a visitor, I can read what this place is. ✅
   - [x] The original TODO scrolls on the east wall; the Menu has it and the Mist principles
-- **S1.1.4** As a visitor on a phone, I can get around. 🔜
+- **S1.1.4** As a visitor on a phone, I can get around. ✅ / 🔜
   - [x] Touch: drag left half to walk, right half to look, pinch to zoom
-  - [ ] On-screen buttons for interact and chat; check on real devices
+  - [x] On-screen buttons on touch screens (`src/touch.js`): the E action, labelled with what it does (Sit, Stand up, Ride the Art Car, Jack into NetMap), and chat; `?touch` shows them on a desktop, `?touch=0` hides them
+  - [x] One thumb on each half walks and looks at once (it used to zoom); seated or riding, either half looks; a tap is per finger
+  - [x] A phone layout, upright and on its side: the top bar on one line, a status panel that folds, the vCPU table as a sheet, captions under the top bar, safe-area insets; a pinch zooms the scene, never the page
+  - [x] The status panel in three sizes: open, folded, and a chip in the corner with just your name (and the CAM light while the camera's on); remembered
+  - [x] Lighter on phones: pixel ratio ≤ 1.5 (`?dpr=` overrides), no canvas MSAA, bloom at CSS pixels; held upright, a wider view (50° across) so the glass and the terminal are in frame from a stool
+  - [x] Checked by the owner on real devices: it all works
+  - [ ] Still to check on real devices: iOS Safari (pinch and `gesturestart`, the keyboard over the chat, the notch and home bar), Android Chrome, the frame rate on a mid-range phone, *Mirror my face* on a phone camera
+  - [ ] The terminal's menu rows are ~19 px tall on a phone: open an order sheet (or bring the terminal up close) on a tap
+  - [ ] Running on touch: Shift has no button, and the walk stick tops out at a walk
 
 ### E1.2 The street is a 6502 ✅ (T1, T2, T6)
 - **S1.2.1** As a visitor, I can walk out the door onto a trace and zoom out to see the whole die. ✅
@@ -125,7 +133,8 @@ real computer, a bartender, and other people.*
 - **S1.6.1** As a visitor, I can play 8-bit music in the bar. ✅
   - [x] An NES-style APU in Web Audio (two pulses, triangle, noise), a song text format, eight tracks: public-domain classics and originals (`src/audio/CREDITS.md`)
   - [x] A jukebox cabinet with a spectrum screen; J play, N next, M mute; the music fades with distance
-  - [ ] Tap or click the cabinet to play (touch screens have no J key)
+  - [x] Tap or click the cabinet to play (touch screens have no J key); on touch screens Pause, Next and Mute float over it while you're near
+  - [x] The music's fade with distance measured in the bar's units: it was comparing body units with micrometres, so the bar heard it at about a tenth
   - [ ] A 6502 job that drives the APU's registers (`apu.poke($4000…)`), so the music runs on the vCPU too
 
 ### E1.5 Art cars ✅ / 🔜 (T1, T2, T8)

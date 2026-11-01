@@ -2,8 +2,9 @@
 // 8-bit arrangements of public-domain classics and the house's own
 // chiptunes on a four-voice APU (audio/apu.js). Its screen shows the
 // track and a spectrum from an AnalyserNode; its neon follows the level.
-// J plays and pauses, N skips, M mutes. Sound starts only on a keypress:
-// browsers don't allow it before a gesture.
+// J plays and pauses, N skips, M mutes; a tap or click on the cabinet plays
+// and pauses too. Sound starts only on a keypress or a tap: browsers don't
+// allow it before a gesture.
 import * as THREE from 'three'
 import { C } from '../theme.js'
 import { textPanel, neonTexture, FONT_MONO, FONT_DISPLAY, whenFontsLoad } from './textures.js'
@@ -15,10 +16,11 @@ const W = 1.5, D = 0.7, BODY = 1.6, R = W / 2 // cabinet: width, depth, body hei
 const HUES = [C.cyan, C.magenta, C.amber, C.green, C.lavender, C.orange, C.yellow, 0xff3c8c].map((c) => new THREE.Color(c))
 
 /**
- * @param {{audio?: Player, position?: [number, number], rotation?: number, note?: (text: string) => void}} [opts]
+ * @param {{audio?: Player, position?: [number, number], rotation?: number, note?: (text: string) => void, touch?: boolean}} [opts]
  *   position is [x, z] in the parent's space (the bar's), rotation about +y; the front faces +z.
+ *   touch: say "tap" rather than name keys a touch screen hasn't got.
  */
-export function makeJukebox({ audio = new Player(), position = [0, 0], rotation = 0, note = () => {} } = {}) {
+export function makeJukebox({ audio = new Player(), position = [0, 0], rotation = 0, note = () => {}, touch = false } = {}) {
   const group = new THREE.Group()
   group.name = 'jukebox'
   group.position.set(position[0], 0.08, position[1])
@@ -139,11 +141,11 @@ export function makeJukebox({ audio = new Player(), position = [0, 0], rotation 
     g.fillRect(22, 246, (w - 44) * p, 4)
     g.font = `18px ${FONT_MONO}`
     g.fillStyle = audio.playing ? '#84f55c' : '#f5c842'
-    const state = !audio.ctx ? 'PRESS J TO PLAY' : audio.playing ? (audio.muted ? 'MUTED' : 'PLAYING') : 'PAUSED'
+    const state = !audio.ctx ? (touch ? 'TAP TO PLAY' : 'PRESS J TO PLAY') : audio.playing ? (audio.muted ? 'MUTED' : 'PLAYING') : 'PAUSED'
     g.fillText(state, 22, 276)
     g.textAlign = 'right'
     g.fillStyle = '#8fa6d6'
-    g.fillText('J play · N next · M mute', w - 22, 276)
+    g.fillText(touch ? 'tap to play · pause' : 'J play · N next · M mute', w - 22, 276)
     g.textAlign = 'left'
   })
   paint()
@@ -152,13 +154,19 @@ export function makeJukebox({ audio = new Player(), position = [0, 0], rotation 
   audio.onChange = (what) => {
     paint()
     const s = audio.song
-    if (what === 'track') note(`Jukebox: ${s.title}, ${s.composer} (${s.license}). N next, M mute.`)
+    if (what === 'track') note(`Jukebox: ${s.title}, ${s.composer} (${s.license}).${touch ? '' : ' N next, M mute.'}`)
     else if (what === 'play') note(`Jukebox: ${s.title}.`)
-    else if (what === 'pause') note('Jukebox paused. J to play.')
-    else if (what === 'mute') note(audio.muted ? 'Jukebox muted. M to unmute.' : 'Jukebox unmuted.')
+    else if (what === 'pause') note(touch ? 'Jukebox paused.' : 'Jukebox paused. J to play.')
+    else if (what === 'mute') note(audio.muted ? (touch ? 'Jukebox muted.' : 'Jukebox muted. M to unmute.') : 'Jukebox unmuted.')
   }
 
-  const world = new THREE.Vector3()
+  const world = new THREE.Vector3(), worldScale = new THREE.Vector3()
+  /** Distance on the floor from a world-space point, in the cabinet's own units (the bar's body units). */
+  const across = (pos) => {
+    group.getWorldPosition(world)
+    return Math.hypot(pos.x - world.x, pos.z - world.z) / group.getWorldScale(worldScale).x
+  }
+  const solid = [body, dome, screenMesh] // what a tap hits: not the neon lines, whose pick radius is wide
   const jb = {
     group, collider, audio,
     toggle() { tryAudio(() => audio.toggle()) },
@@ -174,11 +182,12 @@ export function makeJukebox({ audio = new Player(), position = [0, 0], rotation 
       else return false
       return true
     },
-    /** True within reach of the cabinet (`pos` in world space). */
-    near(pos, reach = 2.5) {
-      group.getWorldPosition(world)
-      return Math.hypot(pos.x - world.x, pos.z - world.z) < reach
-    },
+    /** The ray's hit on the cabinet, or undefined. */
+    hit(raycaster) { return raycaster.intersectObjects(solid, false)[0] },
+    /** The top of the cabinet, above its sign, in world space: where touch controls float. */
+    top(v = new THREE.Vector3()) { return group.localToWorld(v.set(0, BODY + R + 0.55, 0)) },
+    /** True within reach of the cabinet (`pos` in world space, `reach` in the bar's units). */
+    near(pos, reach = 2.5) { return across(pos) < reach },
     /**
      * @param {number} dt
      * @param {THREE.Vector3 | null} [listener] the listener's world position, to fade
@@ -189,8 +198,7 @@ export function makeJukebox({ audio = new Player(), position = [0, 0], rotation 
       if (listener !== undefined) {
         let g = 0.08 // elsewhere (the abode): faintly, through the arch
         if (listener) {
-          group.getWorldPosition(world)
-          const d = Math.hypot(listener.x - world.x, listener.z - world.z)
+          const d = across(listener)
           g = d < 11 ? 1 : 1 / (1 + ((d - 11) / 10) ** 2) // the whole bar, then fading down the street
         }
         audio.setSpace(g)

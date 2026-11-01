@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- No page zoom: a pinch zooms the scene (out over the die), not the page. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Exo Cafe</title>
 <meta name="description" content="A Tron bar on the NMI pad of a running 6502. The first instance of Cloud City, by Freality Metaverse Construction.">
 <meta name="theme-color" content="#050A1F">
@@ -35,7 +36,9 @@
 
 <section class="panel you" aria-label="You">
   <div class="label">You</div>
-  <div class="value"><span id="name">—</span> · <span id="tier">GUEST</span></div>
+  <button type="button" id="you-fold" class="fold" aria-expanded="true" aria-controls="alloc" hidden>Less</button>
+  <button type="button" id="you-mini" class="fold mini-btn" aria-label="Shrink the status panel" title="Shrink" hidden>▾</button>
+  <div class="value who"><span id="name">—</span> · <span id="tier">GUEST</span></div>
   <div class="meter" aria-hidden="true"><div id="rez"></div></div>
   <div id="alloc" class="value small">—</div>
   <div id="room" class="value small muted">—</div>
@@ -58,6 +61,12 @@
   <input id="say" type="text" maxlength="160" placeholder="Say something  (Enter)" aria-label="Say something">
 </form>
 <div id="prompt" class="prompt" hidden></div>
+<!-- Touch screens only (touch.js): buttons for E and Enter, and the jukebox's J, N, M. -->
+<div id="touchbar" class="touchbar" hidden>
+  <button type="button" id="act" class="act" hidden></button>
+  <button type="button" id="talk" class="talk" aria-label="Chat" aria-expanded="false" aria-controls="chat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v10H10l-4 4v-4H4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></button>
+</div>
+<div id="jukebox-ctl" class="jukebox-ctl" role="group" aria-label="Jukebox" hidden><button type="button" data-jb="toggle">Play</button><button type="button" data-jb="next">Next</button><button type="button" data-jb="mute">Mute</button></div>
 <video id="selfie" class="selfie" muted playsinline hidden></video>
 <div id="hint" class="hint">WASD walk · Shift run · drag look · wheel zoom out to see the die · click the Life wall to poke RAM · tap a chip token to donate cycles · J jukebox · N next track · M mute</div>
 
@@ -78,7 +87,7 @@
     <h2>The fever dream</h2>
     <pre id="manifesto"></pre>
     <h2>Mist computing</h2>
-    <ul id="mist"></ul>
+    <ul id="mist-notes"></ul>
     <p class="muted">Chip layout and netlist from <a href="http://www.visual6502.org/" target="_blank" rel="noopener">visual6502.org</a> (Greg James, Brian Silverman, Barry Silverman; CC BY-NC-SA 3.0). Simulator after their MIT-licensed chipsim.</p>
     <button type="button" data-close="menu" class="primary">Back to the bar</button>
   </div>

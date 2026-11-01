@@ -59,7 +59,7 @@ by the community that gathers at [exo.cafe](https://exo.cafe).
 - **The jukebox** in the corner plays 8-bit tracks on an NES-style synth
   in Web Audio: public-domain classics (Korobeiniki, Grieg, Joplin,
   Beethoven, Bach) and originals like the trance anthem *Non-Maskable*.
-  J plays, N skips, M mutes ([credits](src/audio/CREDITS.md)).
+  J plays, N skips, M mutes, or tap the cabinet ([credits](src/audio/CREDITS.md)).
 - **The Art Car** outside the bar runs its light show on a 6502 of its own
   and drives as fast as that chip computes. Press E to ride.
 - **Your face, your avatar.** *Mirror my face* runs MediaPipe's face,
@@ -94,10 +94,14 @@ npm run build      # → dist/, deployable as static files
 ```
 
 Controls: WASD or arrows to walk, Shift to run, drag to look, wheel or
-pinch to zoom out over the die. On touch screens, drag the left half to walk.
-Enter chats; E at the gate jacks into NetMap. `?fx=0` turns off bloom,
-`?enter` skips the intro, and `?debug` exposes `window.exo` for poking at
-the scene from the console.
+pinch to zoom out over the die. Enter chats; E at the gate jacks into NetMap.
+On touch screens, drag the left half to walk and the right half to look
+(both at once with two thumbs), and pinch to zoom; buttons stand in for the
+keys: one for whatever E would do (Sit, Stand up, Ride the Art Car…), one to
+chat, and Pause / Next / Mute over the jukebox. `?touch` shows them on a
+desktop, `?touch=0` hides them. `?fx=0` turns off bloom, `?dpr=` sets the
+pixel ratio, `?enter` skips the intro, and `?debug` exposes `window.exo` for
+poking at the scene from the console.
 
 Pushes to `main` deploy to [exo.cafe](https://exo.cafe) from the `gh-pages`
 branch; each pull request gets a preview at
