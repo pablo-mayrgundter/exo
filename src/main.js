@@ -33,6 +33,7 @@ import { P2PTransport, MultiTransport } from './net/p2p.js'
 import { Controls } from './controls.js'
 import { touchMode, pixelRatio, promptFor, placeAbove, jukeboxLabels, fovFor } from './touch.js'
 import { Thread, mountThread } from './chat/thread.js'
+import { makeNotifier } from './notify.js'
 import { MANIFESTO, MIST, MAX } from './content.js'
 
 const $ = (id) => document.getElementById(id)
@@ -174,7 +175,7 @@ show.onMessage((m) => {
 mind.onMessage((m) => {
   if (m.type !== 'receipt' || !entered || side !== 0 || !barLife.idle) return
   if (avatar.group.position.distanceTo(bar.max.group.position) > 9) return
-  maxSays(MAX.thoughts[m.outputBoard[0] % MAX.thoughts.length])
+  maxSays(MAX.thoughts[m.outputBoard[0] % MAX.thoughts.length], { aside: true })
 })
 
 // --- You ---
@@ -213,10 +214,14 @@ const presence = new Presence(new MultiTransport([new BroadcastTransport(), ...(
 const SINCE = Date.now()
 let hostId = me.id
 function electHost() {
-  let id = me.id, since = SINCE
+  // You can't run him from a background tab either: then the longest-here
+  // visible peer does.
+  const hidden = document.visibilityState === 'hidden'
+  let id = hidden ? null : me.id, since = hidden ? Infinity : SINCE
   for (const [pid, p] of presence.peers) {
+    if (p.state.away) continue // a background tab can't run him: its frames stop
     const s = p.state.since
-    if (typeof s === 'number' && (s < since || (s === since && pid < id))) { id = pid; since = s }
+    if (typeof s === 'number' && (s < since || (s === since && (id === null || pid < id)))) { id = pid; since = s }
   }
   hostId = id
   barLife.setHost(id === me.id)
@@ -250,21 +255,42 @@ const thread = new Thread({
   max: 200,
   load: () => { try { return JSON.parse(localStorage.getItem(THREAD_KEY)) } catch { return null } },
   save: (entries) => { try { localStorage.setItem(THREAD_KEY, JSON.stringify(entries)) } catch { /* fine */ } },
+  // Where you last read, so a background tab or a reload can catch you up.
+  loadRead: () => { try { const v = Number(localStorage.getItem(THREAD_KEY + '/read')); return v || null } catch { return null } },
+  saveRead: (t) => { try { localStorage.setItem(THREAD_KEY + '/read', String(t)) } catch { /* fine */ } },
 })
 const threadView = mountThread($('thread'), thread)
+// The tab: "(3) Exo Cafe" and a badge on its icon while anything's unread.
+const notifier = makeNotifier({ base: document.title })
+/** Reads the thread if you can see it; first marking where the new lines start. */
+function catchUp() {
+  if (!thread.open || document.visibilityState !== 'visible') return
+  if (thread.unread) threadView.divider(thread.firstUnread())
+  thread.markRead()
+}
 function showThread(open) {
+  const opening = open && !thread.open
   thread.setOpen(open)
   $('thread').hidden = !open
   $('thread-toggle').setAttribute('aria-expanded', String(open))
-  if (open) threadView.scrollToEnd()
+  if (opening) {
+    threadView.divider(-1)
+    threadView.scrollToEnd()
+    catchUp() // to the first line you haven't read, if any
+  }
 }
-thread.onChange(() => {
+thread.onChange((e) => {
+  // A line arriving while you're watching is read as it comes.
+  if (e && thread.open && document.visibilityState === 'visible') thread.markRead()
   const n = thread.unread
   for (const id of ['thread-unread', 'talk-unread']) {
     $(id).hidden = n === 0
     $(id).textContent = n > 9 ? '9+' : String(n)
   }
+  notifier.set('chat', n)
 })
+notifier.set('chat', thread.unread)
+document.addEventListener('visibilitychange', catchUp)
 $('thread-toggle').addEventListener('click', () => showThread(!thread.open))
 const nameOf = (id) => presence.peers.get(id)?.state.name ?? 'someone'
 // Comings and goings, without the flicker of a slow connection: a leave is
@@ -374,7 +400,7 @@ function give(id) {
   const s = mist.get(id)
   if (state === 'queued') note(`${s.name}: queued, no free slot. Take a donation back from another job in Mist.`)
   else note(`Donating ${Math.round(s.core.donated * 100)}% of a core to ${s.name} (${s.gifts} token${s.gifts > 1 ? 's' : ''}).`)
-  if (id === 'max') maxSays(pick(MAX.donate))
+  if (id === 'max') maxSays(pick(MAX.donate), { aside: true })
   mistPanel.render()
 }
 
@@ -417,7 +443,7 @@ $('mirror').addEventListener('click', async () => {
     $('cam').hidden = false
     btn.setAttribute('aria-pressed', 'true')
     note('Mirroring your face.')
-    maxSays(pick(MAX.face))
+    maxSays(pick(MAX.face), { aside: true })
   } catch (err) {
     note(`No face tracking: ${err.message ?? err}`)
     face.stop()
@@ -573,10 +599,11 @@ function setText(el, text) { if (el.textContent !== text) el.textContent = text 
 function pick(a) { return a[Math.floor(Math.random() * a.length)] }
 let lastMax = 0
 let captionTimer = 0
-function maxSays(text) {
+function maxSays(text, { aside = false } = {}) {
   bar.max.say(text, 8)
-  // Into the conversation, if you're in the bar to hear him.
-  if (side === 0) thread.add({ kind: 'max', who: 'Max Pablo', text })
+  // Into the conversation, if you're in the bar to hear him; thinking aloud
+  // is there to read but doesn't count as unread.
+  if (side === 0) thread.add({ kind: 'max', who: 'Max Pablo', text, aside })
   lastMax = performance.now()
   // On a stool, in first person, his bubble is above the frame: subtitle it.
   if (barLife?.seat == null) return
@@ -703,6 +730,18 @@ if (window.exo) window.exo.jukebox = jukebox
 // --- Loop ---
 const clock = new THREE.Clock()
 let lastPublish = 0, lastHud = 0, greeted = false
+// In a background tab the frame loop stops, and with it presence; a slow
+// heartbeat keeps you in the room as away (timers run at most once a
+// second there, or once a minute after a while), and you hand Max on.
+let lastState = null
+setInterval(() => {
+  if (document.visibilityState === 'hidden' && entered && lastState) presence.publish({ ...lastState, away: true, sip: null })
+}, 2000)
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'hidden') return
+  barLife.setHost(false)
+  if (lastState) presence.publish({ ...lastState, away: true, sip: null })
+})
 let promptText = null, promptSince = 0
 const prevPos = new THREE.Vector3()
 const meAt = new THREE.Vector3() // your world position, for the jukebox
@@ -854,7 +893,7 @@ function frame() {
 
   // Max: a hello when you first come near, then the odd remark.
   const nearMax = side === 0 && pos.distanceTo(bar.max.group.position) < 7
-  if (entered && nearMax && !greeted) { greeted = true; maxSays(pick(MAX.greet)) }
+  if (entered && nearMax && !greeted) { greeted = true; maxSays(pick(MAX.greet), { aside: true }) }
 
   for (const [, a] of others) {
     a.update(dt, { time: now })
@@ -892,10 +931,13 @@ function frame() {
       a.handAim.R = s.hands?.[1]?.map((v) => v / 500) ?? null
       const t = tierFor(s, avatar.group.position)
       if (a.tier !== t) a.setTier(t)
+      // In the background: still here, donating, but not looking.
+      const label = s.away ? `${s.name} · away` : s.name
+      if (a.label && a.shownName !== label) { a.setName(label); a.shownName = label }
     }
     if (entered) {
-      presence.publish({
-        name: me.name, hue: me.hue, tier: avatar.tier, shares: sharing, scene: side ? 'abode' : 'world', since: SINCE,
+      presence.publish(lastState = {
+        name: me.name, hue: me.hue, tier: avatar.tier, shares: sharing, scene: side ? 'abode' : 'world', since: SINCE, away: document.visibilityState === 'hidden',
         p: pos.toArray(), yaw: heading, head: avatar.headAim.toArray().slice(0, 3),
         seat: barLife.seat, look: seatedNow ? [avatar.look.yaw, avatar.look.pitch] : null,
         drink: barLife.openDrink(), sip: barLife.sipT(now),
