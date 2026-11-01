@@ -106,7 +106,7 @@ real computer, a bartender, and other people.*
   - [x] Orders interrupt his chores and conversation
 - **S1.7.3** As a visitor, my drink is a donation. ✅
   - [x] A drink is drunk a sip at a time, by clicking your glass: you reach for it, raise it, tip it and drink a sixth of it (a drink holds ≈200k half-cycles); what you drank goes on your tab, and your budget goes to Max's mind until the tab is paid (about 20 s a sip at a quarter of a core); untouched, nothing is drunk or donated
-  - [ ] Others see you raise your glass (send the sip with presence)
+  - [x] Others see you raise your glass: how far into a sip you are goes out with presence, and your glass moves with your avatar's hand on their screens
   - [x] Elbows: arms in two with two-bone IK, so a glass reaches the mouth; mocap bends them when the pose sees the elbow
   - [x] Your tab counts drinks and cycles; an empty glass gets "another?", and shorter conversations
   - [ ] Drinks for others: buy a round (a donation in their name)

@@ -17,7 +17,7 @@ import { makeBar } from './world/bar.js'
 import { makeAbode, ABODE_RATE } from './world/abode.js'
 import { PortalPair } from './world/portal.js'
 import { neonTexture, FONT_MONO } from './world/textures.js'
-import { Avatar, TIERS } from './avatar/avatar.js'
+import { Avatar, TIERS, SIP } from './avatar/avatar.js'
 import { FaceTracker } from './avatar/face.js'
 import { Ledger, allocation } from './mist/ledger.js'
 import { Mist, Job } from './mist/scheduler.js'
@@ -660,7 +660,10 @@ function frame() {
   const nearMax = side === 0 && pos.distanceTo(bar.max.group.position) < 7
   if (entered && nearMax && !greeted) { greeted = true; maxSays(pick(MAX.greet)) }
 
-  for (const [, a] of others) a.update(dt, { time: now })
+  for (const [, a] of others) {
+    a.update(dt, { time: now })
+    if (a.seatIndex != null) barLife.holdFor(a.seatIndex, a, now)
+  }
   if (now - lastPublish > 0.1) {
     lastPublish = now
     presence.sweep()
@@ -678,6 +681,13 @@ function frame() {
       a.group.rotation.y = s.yaw
       if (s.seat != null && !a.seated) a.sit()
       if (s.seat == null && a.seated) a.stand()
+      a.seatIndex = s.seat ?? null
+      // Their sip: `sip` is how far in they are; start ours to match, once per sip.
+      if (a.seated && typeof s.sip === 'number' && !a.seated.sip) {
+        const start = now - s.sip
+        const glass = barLife.glassWorld(s.seat)
+        if (glass && (a.lastSip == null || start - a.lastSip > SIP.end)) { a.lastSip = start; a.seated.sip = { start, glass } }
+      }
       if (s.look) { a.look.yaw = s.look[0]; a.look.pitch = s.look[1] }
       a.headAim.set(...s.head)
       a.armAim.L = s.arms?.[0] ?? null
@@ -692,7 +702,7 @@ function frame() {
         name: me.name, hue: me.hue, tier: avatar.tier, shares: sharing, scene: side ? 'abode' : 'world', since: SINCE,
         p: pos.toArray(), yaw: heading, head: avatar.headAim.toArray().slice(0, 3),
         seat: barLife.seat, look: seatedNow ? [avatar.look.yaw, avatar.look.pitch] : null,
-        drink: barLife.openDrink(),
+        drink: barLife.openDrink(), sip: barLife.sipT(now),
         arms: [avatar.armAim.L, avatar.armAim.R],
         // Hands in 2 mm steps: 63 small integers each.
         hands: [avatar.handAim.L, avatar.handAim.R].map((h) => h && h.map((v) => Math.round(v * 500))),
@@ -768,7 +778,8 @@ function hud() {
   let near = 0
   for (const [, peer] of presence.peers) if (peer.state.scene === (side ? 'abode' : 'world') && avatar.group.position.distanceTo(new THREE.Vector3(...peer.state.p)) <= SHARE_RADIUS) near++
   const shared = sharing ? `shared with ${near} nearby` : 'not shared'
-  $('room').textContent = `Room ${ROOM} · ${presence.peers.size} here${presence.peers.size ? (barLife.host ? ' · you host Max' : '') : ''} · ` +
+  const hostName = barLife.host ? 'you' : presence.peers.get(hostId)?.state.name ?? '…'
+  $('room').textContent = `Room ${ROOM} · ${presence.peers.size + 1} here · Max hosted by ${hostName} · ` +
     (!p2p ? 'this browser only' : p2p.error ? 'peer to peer unavailable' : `peer to peer, ${p2p.peers} linked`)
   $('alloc').textContent = al.smooth
     ? `Smooth body · full rez · ${shared}`

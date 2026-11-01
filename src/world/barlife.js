@@ -116,17 +116,19 @@ export function makeBarLife({ bar, avatar, mist, me, say, note, respond }) {
   // to your mouth, tipped, and back down.
   const HAND = new THREE.Vector3(), Q = new THREE.Quaternion(), QA = new THREE.Quaternion(), TIP = new THREE.Quaternion()
   const X = new THREE.Vector3(1, 0, 0)
-  function holdGlass(s, time) {
+  function holdGlass(s, time, av = avatar) {
     const g = glasses[s]?.glass.group
     if (!g) return
     const home = bar.glassAt(bar.seats[s])
-    const hold = sip && sip.seat === s && avatar.seated ? avatar.sipHold(time) : null
+    // Yours while you sip; someone else's while their avatar does.
+    const sipping = av === avatar ? sip && sip.seat === s : !!av.seated?.sip
+    const hold = sipping && av.seated ? av.sipHold(time) : null
     if (!hold || hold.attach <= 0) { g.position.copy(home); g.quaternion.identity(); return }
     // The glass's middle in the hand: its base a little below the wrist.
-    bar.group.worldToLocal(avatar.hand('R', HAND, GRIP))
+    bar.group.worldToLocal(av.hand('R', HAND, GRIP))
     g.position.lerpVectors(home, HAND, hold.attach)
     // Tipped toward the mouth, in the avatar's frame, then into the bar's.
-    avatar.group.getWorldQuaternion(QA)
+    av.group.getWorldQuaternion(QA)
     bar.group.getWorldQuaternion(Q).invert().multiply(QA).multiply(TIP.setFromAxisAngle(X, -hold.tilt))
     g.quaternion.identity().slerp(Q, hold.attach)
   }
@@ -306,6 +308,12 @@ export function makeBarLife({ bar, avatar, mist, me, say, note, respond }) {
     glassAt(s) { return glasses[s]?.glass.group ?? null },
 
     get sipping() { return !!sip },
+    /** How far into a sip you are (seconds), for presence; or null. */
+    sipT(time) { return sip ? Math.round((time - sip.start) * 100) / 100 : null },
+    /** Moves a remote visitor's glass with their avatar while they sip. */
+    holdFor(s, av, time) { if (glasses[s]?.remote) holdGlass(s, time, av) },
+    /** Where a stool's glass stands, in world space (for a remote sip's reach). */
+    glassWorld(s) { return glasses[s]?.glass.group.getWorldPosition(new THREE.Vector3()) ?? null },
 
     /**
      * Your glass, for presence: { seat, drink, level }, and how long it's
@@ -327,7 +335,15 @@ export function makeBarLife({ bar, avatar, mist, me, say, note, respond }) {
     setHost(h) {
       if (h === host) return
       host = h
+      // Stepping down: your own order, queued or being made here, goes to the new host.
+      if (!host && seat !== null) {
+        const t = bartender.task
+        const o = bartender.orders.find((x) => x.seat === seat) ??
+          (t?.kind === 'serve' && t.seat === seat ? { seat, drink: t.drink.id } : null)
+        if (o) pending = { seat, drink: o.drink, at: -Infinity } // sent on the next update
+      }
       bartender.release()
+      bartender.orders = []
       maxState = null
       if (host && pending) { bartender.order(pending.seat, pending.drink, me.name); pending = null }
     },
