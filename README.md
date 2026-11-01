@@ -62,6 +62,12 @@ by the community that gathers at [exo.cafe](https://exo.cafe).
   J plays, N skips, M mutes, or tap the cabinet ([credits](src/audio/CREDITS.md)).
 - **The Art Car** outside the bar runs its light show on a 6502 of its own
   and drives as fast as that chip computes. Press E to ride.
+- **Your voice, in 8 bits.** *Voice* turns your mic on, and the people
+  near you hear you from your avatar, fading with distance. By default
+  they hear an 8-bit voice made from yours in your browser (a chiptune
+  vocoder: your words and intonation, played on a square wave and NES
+  noise, pitch and formants shifted so you're harder to recognize; the
+  button cycles 8-bit, high and low); *Real voice* sends your own. Visor mouths move as people talk.
 - **Your face, your avatar.** *Mirror my face* runs MediaPipe's face,
   pose and hand landmarkers in your browser: your face on the visor, your
   head turning its head, your arms raising its arms, your hands (thumbs

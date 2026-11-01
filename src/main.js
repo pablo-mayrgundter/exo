@@ -34,6 +34,7 @@ import { Controls } from './controls.js'
 import { touchMode, pixelRatio, promptFor, placeAbove, jukeboxLabels, fovFor } from './touch.js'
 import { Thread, mountThread } from './chat/thread.js'
 import { makeNotifier } from './notify.js'
+import { makeVoice, VOICES } from './voice/voice.js'
 import { MANIFESTO, MIST, MAX } from './content.js'
 
 const $ = (id) => document.getElementById(id)
@@ -208,6 +209,13 @@ let riding = false
 const ROOM = params.get('room') || 'bar'
 const p2p = params.get('p2p') === '0' ? null : new P2PTransport({ room: ROOM, relay: params.get('relay') })
 const presence = new Presence(new MultiTransport([new BroadcastTransport(), ...(p2p ? [p2p] : [])]), { id: me.id })
+// Voice over the same peer connections (voice/voice.js): off until you turn it on.
+const voice = makeVoice({ transport: p2p, id: me.id })
+let voiceMode = 'chip'
+try { const m = localStorage.getItem('exo.cafe/voice-mode'); if (VOICES[m]) voiceMode = m } catch { /* 8-bit */ }
+voice.setMode(voiceMode)
+// Audio may start only after a gesture on the page.
+for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => voice.unlock(), { passive: true })
 // One Max for the room: whoever's been here longest runs him (the host),
 // and everyone else shows his moves, sends orders to the host and gets
 // their drinks back. `since` goes out with presence; ties go to the lower id.
@@ -306,6 +314,7 @@ presence.on('join', (m) => {
   a.group.position.fromArray(m.p)
 })
 presence.on('leave', (m) => {
+  voice.drop(m.id)
   const a = others.get(m.id)
   if (a) {
     const who = a.name || 'Someone'
@@ -419,6 +428,41 @@ $('cam').addEventListener('click', () => {
   $('selfie').hidden = !show
   $('cam').setAttribute('aria-pressed', String(show))
 })
+
+function showVoice() {
+  const b = $('voice')
+  b.classList.toggle('live', voice.on)
+  b.setAttribute('aria-pressed', String(voice.on))
+  b.textContent = voice.on ? 'MIC' : 'Voice'
+  b.title = voice.on ? 'Your mic is on: people near you hear you (click to turn it off)' : 'Talk to the people near you (your mic)'
+  $('voicemode').textContent = VOICES[voiceMode].label
+  $('voicemode').setAttribute('aria-pressed', String(voiceMode !== 'real'))
+}
+$('voice').addEventListener('click', async () => {
+  const b = $('voice')
+  b.disabled = true
+  try {
+    const on = await voice.set(!voice.on)
+    if (on) note(voiceMode !== 'real'
+      ? `Mic on, ${VOICES[voiceMode].label}: people near you hear a chiptune voice made from yours. Your own voice stays on this machine.`
+      : 'Mic on: people near you hear your voice.')
+    if (on && voice.mode !== voiceMode) { voiceMode = voice.mode; note('The 8-bit voice isn\'t available in this browser; you\'re on your own voice.') }
+  } catch (e) {
+    note(`No mic: ${e?.message ?? e}`)
+  } finally {
+    b.disabled = false
+    showVoice()
+  }
+})
+$('voicemode').addEventListener('click', () => {
+  // 8-bit, 8-bit high, 8-bit low, your own voice, and round again.
+  const order = Object.keys(VOICES)
+  voiceMode = order[(order.indexOf(voiceMode) + 1) % order.length]
+  voice.setMode(voiceMode)
+  try { localStorage.setItem('exo.cafe/voice-mode', voiceMode) } catch { /* fine */ }
+  showVoice()
+})
+showVoice()
 
 $('mirror').addEventListener('click', async () => {
   const btn = $('mirror')
@@ -724,12 +768,13 @@ controls.onClick = (e) => {
 }
 
 // A handle for tests and the console: ?debug
-if (params.has('debug')) window.exo = { get clock() { return clock }, p2p, terminals, setView, barLife, sitDown, standUp, others, mist, vcpu, worker, car, life, show, mind, face, give, avatar, controls, bar, floor, abode, portal, camera, renderer, ledger, presence, chipFrame, cafe, get side() { return side }, get tick() { return tick } }
+if (params.has('debug')) window.exo = { get clock() { return clock }, p2p, voice, terminals, setView, barLife, sitDown, standUp, others, mist, vcpu, worker, car, life, show, mind, face, give, avatar, controls, bar, floor, abode, portal, camera, renderer, ledger, presence, chipFrame, cafe, get side() { return side }, get tick() { return tick } }
 if (window.exo) window.exo.jukebox = jukebox
 
 // --- Loop ---
 const clock = new THREE.Clock()
 let lastPublish = 0, lastHud = 0, greeted = false
+const HEAD = new THREE.Vector3(0, 1.6, 0), EAR_FWD = new THREE.Vector3()
 // In a background tab the frame loop stops, and with it presence; a slow
 // heartbeat keeps you in the room as away (timers run at most once a
 // second there, or once a minute after a while), and you hand Max on.
@@ -899,6 +944,19 @@ function frame() {
     a.update(dt, { time: now })
     if (a.seatIndex != null) barLife.holdFor(a.seatIndex, a, now)
   }
+  // Voices from where people stand (heads, in metres), and mouths that move with them.
+  avatar.mouth = voice.on ? Math.min(1, voice.level() * 7) : 0
+  if (voice.speakers.length) {
+    const here = side ? 'abode' : 'world'
+    const voices = new Map()
+    for (const [id, a] of others) {
+      a.mouth = Math.min(1, voice.levelFor(id) * 7)
+      const s = presence.peers.get(id)?.state
+      if (s?.voice && s.scene === here) voices.set(id, a.group.position.clone().add(HEAD))
+    }
+    camera.getWorldDirection(EAR_FWD)
+    voice.place(avatar.group.position.clone().add(HEAD), EAR_FWD, voices)
+  }
   if (now - lastPublish > 0.1) {
     lastPublish = now
     presence.sweep()
@@ -940,7 +998,7 @@ function frame() {
         name: me.name, hue: me.hue, tier: avatar.tier, shares: sharing, scene: side ? 'abode' : 'world', since: SINCE, away: document.visibilityState === 'hidden',
         p: pos.toArray(), yaw: heading, head: avatar.headAim.toArray().slice(0, 3),
         seat: barLife.seat, look: seatedNow ? [avatar.look.yaw, avatar.look.pitch] : null,
-        drink: barLife.openDrink(), sip: barLife.sipT(now),
+        drink: barLife.openDrink(), sip: barLife.sipT(now), voice: voice.on ? voiceMode : null,
         arms: [avatar.armAim.L, avatar.armAim.R],
         // Hands in 2 mm steps: 63 small integers each.
         hands: [avatar.handAim.L, avatar.handAim.R].map((h) => h && h.map((v) => Math.round(v * 500))),

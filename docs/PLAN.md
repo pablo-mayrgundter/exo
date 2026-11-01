@@ -244,9 +244,16 @@ the shape of the net.*
   - [ ] Draw the visor from blendshapes, so the face survives the network
   - [x] Elbows: split the arm in two and use the elbow landmark
 
-### E4.2 Voice 🔜 (T5)
-- **S4.2.1** As a visitor, I can talk to people near me, spatially.
-  - [ ] Voice over the peer connections we already have (Trystero `addStream`), placed with Web Audio panners at each avatar; an SFU (LiveKit, as MatrixRTC uses) past ~6 talkers
+### E4.2 Voice ✅ / 🔜 (T5)
+- **S4.2.1** As a visitor, I can talk to people near me, spatially. ✅ (peer to peer)
+  - [x] Voice over the peer connections we already have (Trystero `addStream`), placed with HRTF panners at each avatar's head, fading with distance, silent from another place; the mic is off until you turn it on, with a light while it's on
+  - [x] An 8-bit voice (`src/voice/chipvoice.js`, in an AudioWorklet): a 24-band chiptune vocoder, your bands shaping a 25% pulse at your pitch (YIN, median of three, snapped to semitones, held through gaps under 40 ms) and NES noise for unvoiced sounds, sample-and-held at 22 kHz in 8 bits. Made in your browser before it's sent: in 8-bit mode your own voice never leaves your machine. Or your real voice, with echo cancellation
+  - [x] Harder to recognize: presets shift the pitch and the formants (8-bit +3/+2 semitones, high +9/+5, low −7/−4); the mode button cycles them and your own voice
+  - [x] Visor mouths open with each voice's level, yours and others'
+  - [ ] Tune the 8-bit voice with real speakers (the tests used espeak): unvoiced threshold, pitch quantization strength, the presets' shifts; Max's own voice for his lines
+  - [ ] Push to talk, and voice activity detection to send nothing in silence
+  - [ ] AI re-voicing (speech-to-speech, e.g. an RVC-style model on WebGPU) as a third mode, if it can run locally in real time
+  - [ ] An SFU (LiveKit, as MatrixRTC uses) past ~6 talkers
   - [ ] murmur (Mumble) per room, with positional audio; or WebRTC SFU — decide with Bldrs Collab
   - [ ] The Synch Master deploys murmur containers on demand, one per room group, reused across users
 - **S4.2.2** As a group, our voice server runs near us. (S3.2.4)

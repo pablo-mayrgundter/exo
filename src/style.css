@@ -217,14 +217,14 @@ button { font-family: var(--mono); }
 }
 .fold[hidden] { display: none; }
 .touch .fold.mini-btn { right: 66px; min-width: 44px; font-size: 16px; letter-spacing: 0; }
-.touch .panel.you.folded .meter, .touch .panel.you.folded #alloc, .touch .panel.you.folded #room, .touch .panel.you.folded #share, .touch .panel.you.folded #mirror { display: none; }
+.touch .panel.you.folded .meter, .touch .panel.you.folded #alloc, .touch .panel.you.folded #room, .touch .panel.you.folded #share, .touch .panel.you.folded #mirror, .touch .panel.you.folded #voicemode { display: none; }
 /* Shrunk to a chip in the corner: your name and a handle to bring it back. */
 .touch .panel.you.mini { left: auto; width: auto; padding: 4px 48px 4px 12px; cursor: pointer; }
 /* …and the CAM light, which stays in sight while your camera is on. */
 .touch .panel.you.mini { display: flex; align-items: center; gap: 10px; }
 .touch .panel.you.mini > :not(.who):not(.mini-btn):not(.buttons) { display: none; }
 .touch .panel.you.mini .buttons { margin: 0; }
-.touch .panel.you.mini .buttons > :not(#cam) { display: none; }
+.touch .panel.you.mini .buttons > :not(#cam):not(#voice.live) { display: none; }
 .touch .panel.you.mini .who { line-height: 40px; }
 .touch .panel.you.mini .fold.mini-btn { right: 2px; }
 .touch .buttons { gap: 6px; margin-top: 8px; }
@@ -303,3 +303,7 @@ button { font-family: var(--mono); }
 @media (min-width: 721px) and (min-height: 561px) {
   .touch .panel.mist { left: auto; top: auto; bottom: calc(var(--you-h) + 8px); width: min(460px, calc(100vw - 32px)); max-height: calc(100dvh - var(--you-h) - var(--top-h) - 24px); }
 }
+
+/* The mic, while it's on: a light, like the camera's. */
+.buttons button#voice.live { background: none; color: #ff6b6b; border-color: #ff6b6b; }
+#voice.live::before { content: '● '; }
