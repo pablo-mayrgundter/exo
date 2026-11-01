@@ -253,7 +253,9 @@ the shape of the net.*
 
 ### E4.3 Chat ✅ / 🔜 (T5)
 - [x] Speech bubbles over avatars; Enter to talk
-- [ ] Chat history from the Matrix room; moderation tools for hosts
+- [x] A thread of the conversation (`src/chat/thread.js`): everyone's words, Max's (while you're in the bar), and who came and went, timestamped, kept per room in this browser. On a desktop it opens above the input (Enter, or its button, with a count of unread lines; Esc closes it); on a phone the chat button opens it with the input as a sheet, which stays open as you talk
+- [ ] History for latecomers: peers have only what they heard; a peer that's been here longest could hand its thread to newcomers, until a Matrix room keeps it
+- [ ] Chat history from the Matrix room; moderation tools for hosts (mute, and a report that reaches them)
 
 ## I5 · Cosmography: knowing where (and when) we are
 
