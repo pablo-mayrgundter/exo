@@ -1,10 +1,10 @@
 // Pablo's abode: another place in cyberspace, reached through the arch in
 // the bar's west wall. A temple pavilion with a glowing tree of life on its
 // gable, a tree of cyan spirals inlaid in the plaza, candles along spiral
-// paths, and a dusk sky: celestiary's stars when its guest can draw them
-// (celestiary-sky.js), else procedural ones. Its clock runs 600 times as
-// fast as the bar's, so the stars wheel round about every two and a half
-// minutes.
+// paths, and celestiary's sky over it (celestiary-sky.js): its day, its
+// sunsets and its stars, from the abode's place on Earth; a dusk dome with
+// procedural stars until it comes, or if it can't. Its clock runs 600
+// times as fast as the bar's: a day in two and a half minutes.
 //
 // Abode space: metres, the plaza's centre at the origin, the temple to -z,
 // the arch back to the bar at +z facing the temple.
@@ -53,16 +53,18 @@ export function makeAbode({ renderer } = {}) {
         vec3 c = h < 0.12 ? mix(horizon, mid, smoothstep(-0.02, 0.12, h)) : mix(mid, top, smoothstep(0.12, 0.6, h));
         #ifdef CELESTIARY
         if (skyOn > 0.5) {
-          // celestiary's sky over the dusk, thinning into the horizon's haze.
-          vec4 s = skySample(normalize(vP)) * smoothstep(-0.02, 0.15, h);
-          c = c * (1.0 - s.a) + s.rgb;
+          // celestiary's sky, air and all, wherever its last frame reaches;
+          // the dusk past its edge.
+          vec4 s = skySample(normalize(vP));
+          c = mix(c, s.rgb, s.a);
         }
         #endif
         gl_FragColor = vec4(c, 1.0);
       }`,
   }))
-  // The guest starts when the abode is first drawn, from either side.
-  if (celestiary) sky.onBeforeRender = () => celestiary.seen()
+  // The guest starts when the abode is first drawn, from either side, and
+  // draws for the camera that drew it last.
+  if (celestiary) sky.onBeforeRender = (_r, _s, camera) => celestiary.seen(camera)
   scene.add(sky)
   const starPos = []
   for (let i = 0; i < 2500; i++) {
@@ -232,6 +234,8 @@ export function makeAbode({ renderer } = {}) {
     scene, colliders, portalAnchor,
     /** celestiary's sky (null without a renderer): its `stats`, `on`. */
     sky: celestiary,
+    /** 0 at night to 1 by day under celestiary's sky; 0 under the procedural dusk. */
+    get daylight() { return celestiary?.daylight ?? 0 },
     spawn: new THREE.Vector3(0, 0, 13),
     /** @param {number} abodeTime seconds on the abode's clock */
     update(abodeTime, wallTime) {

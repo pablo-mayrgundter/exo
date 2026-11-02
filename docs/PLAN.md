@@ -34,7 +34,7 @@ Status: ✅ shipped in the first scene · 🔜 next · 💭 later.
 | **T6 cosmic.js** | frames of space and time, reprojection, floating origin, orbits | `src/cosmic/` now, its own package later | ✅ frames and clocks |
 | **T7 NetMap** | maps of the internet; GeoNetMap; travel along real routes | [netmap](https://github.com/pablo-mayrgundter/netmap) | ✅ live, linked, and live in the gate (`map.html`) |
 | **T8 Mist runtime** | donated resources, identity, local-first data, self-hosting | `src/mist/` | ✅ ledger; 🔜 shared compute |
-| **T9 Celestiary** | the sky: stars, planets, orbit.js | [celestiary](https://github.com/celestiary/web) | 💭 |
+| **T9 Celestiary** | the sky: stars, planets, orbit.js | [celestiary](https://github.com/celestiary/web) | 🚧 the abode's sky is celestiary's (`sky.html`) |
 | **T10 Platform and ops** | hosting, domain, CI, budgets, licenses | this repo, `.github/` | ✅ Pages |
 
 ## I1 · Exo Cafe: the first live Cloud City
@@ -231,10 +231,14 @@ the shape of the net.*
   - [ ] A window in the bar too; looking around it (the view following the visitor's angle)
 - **S3.2.4** As a group, we pick where our room's server runs, on GeoNetMap, for least latency. (T5)
 
-### E3.3 The sky: Celestiary 💭 (T9, T4, T6)
+### E3.3 The sky: Celestiary 🚧 (T9, T4, T6)
 - **S3.3.1** As a visitor in the abode, I see the real sky for my place and time, through Celestiary.
-  - [x] Host side (`src/world/celestiary-sky.js`): celestiary's `layer.html` in a cross-origin iframe draws six cube faces in the equator of date at the abode's ×600 time into an atlas, and the dome samples it under the dusk glow and turns it by sidereal time. A guest whose `layer:hello` lacks kind `sky` is let go, with the procedural sky kept
-  - [ ] celestiary: a sky mode for `layer.html` (`?sky=1`: stars, planets, Sun and Moon; hello `kinds: ['sky'], frames: ['equator-of-date']`). Today's layer draws orbits only, so production stays procedural
+  - [x] ~~Cube faces of a sky-only layer~~: dropped for celestiary itself (the whole app, not an export of a few of its parts)
+  - [x] celestiary's `sky.html` (celestiary/web, design/SkyGuest.md): the app less its chrome, landed on Earth at the view's observer, drawing a host's camera (a rotation in the equator of date, any projection) at the host's time; its own meter and eye adaptation (its shadow draws), or `meter=0` for a gain by the Sun's altitude; hello `kinds: ['sky'], frames: ['equator-of-date']`
+  - [x] Host side (`src/world/celestiary-sky.js`): the camera that drew the dome each frame, one view in flight, its field widened 1.3× in the tangent, replayed into a render target at 0.75 of the screen; the dome looks each direction up through the frame's own view and projection (exact for a sky, so a late frame keeps its stars in place), exo's dusk past its edge; the bloom's threshold rises with the daylight
+  - [ ] celestiary.org serving `sky.html` (its PR), and exo.cafe on its allow-list (in that PR)
+  - [ ] A portal-netgl switch to let the guest's shadow draw only the frames its meter samples (the meter's cost from every frame to a few)
+  - [ ] Real-GPU cost: celestiary's frame twice (shadow and replay) each exo frame; `?sky_scale=`, `?sky_meter=0` if it's heavy
   - [ ] portal-netgl: `frame: 'equator-of-date'` and `observer` in `NetGLLayerView` (its type only names `'ecef'`)
 - **S3.3.2** As a visitor, I can step out of the bar into the solar system (a door, like portal's Celestiary demo).
 

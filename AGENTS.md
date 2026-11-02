@@ -112,6 +112,21 @@ would otherwise rediscover.
   target (`renderer.readRenderTargetPixels` it for the window alone).
   Stand in front of the gate in first person: `exo.setView('first')`,
   avatar at `(9 − 0.479·7, 0, 22 + 0.878·7)`, `controls.yaw = −0.5`.
+  For the sky, build celestiary (celestiary/web: `CESIUM_ION_TOKEN= yarn
+  build`) and run its `yarn sky-host`, which serves `docs/` on
+  127.0.0.1:5482 (and its own check host on localhost:5483); open
+  `?enter&debug&sky_src=http://127.0.0.1:5482/sky.html&sky_scale=0.5`.
+  Walk through the arch by holding forward (`exo.controls.input = () =>
+  ({x: 0, f: 1})` from just inside it; setting the position is no
+  crossing). `exo.abode.sky.stats` has `status` ('sky' once a frame is
+  in), `frames`, `latencyMs`; the abode's clock starts at `Date.now()`,
+  so shift `Date.now` in an init script to see day or dusk. Its first
+  frame takes 10–30 s on SwiftShader (the whole app boots).
+- **Finding a guest's frame in Playwright:** match the frame by its URL's
+  start (`fr.url().startsWith('http://127.0.0.1:5482')`): the host's own
+  URL carries the guest's in `?sky_src=`, so `includes` finds the host,
+  and `frame.evaluate` then runs in the parent (it looked like a Playwright
+  bug for a while).
 - **deck.gl under SwiftShader is very slow.** NetMap's globe took ~20 s
   a frame at 512² on a busy 4-core sandbox (in netmap's own page too), and it's paid inside one of
   exo's frames, so the window paces itself to a frame every minute or two

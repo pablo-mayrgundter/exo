@@ -110,7 +110,8 @@ let side = 0 // 0: the world (bar and street), 1: the abode
 const composer = new EffectComposer(renderer)
 const renderPass = new RenderPass(world, camera)
 composer.addPass(renderPass)
-const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.75, 0.55, 0.22)
+const BLOOM_THRESHOLD = 0.22
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.75, 0.55, BLOOM_THRESHOLD)
 if (touch) {
   // On phones the glow renders at CSS pixels, as on a 1× desktop, rather
   // than at the screen's: a third to a quarter of the fill, and it's soft anyway.
@@ -971,6 +972,9 @@ function frame() {
   bar.update(dt, floor, tick, now)
   jukebox.update(dt, side === 0 ? avatar.group.getWorldPosition(meAt) : null)
   abode.update(abodeFrame.time, now)
+  // Under celestiary's daylight the whole sky is brighter than the bloom's
+  // threshold; raise it with the day so the glow stays the neon's.
+  bloom.threshold = side === 1 ? BLOOM_THRESHOLD + (0.9 - BLOOM_THRESHOLD) * abode.daylight : BLOOM_THRESHOLD
   gate.update(now, side === 0 ? pos : null)
   const nearCar = side === 0 && pos.distanceTo(car.group.position) < 4.5
   const nearSeat = side === 0 && !seatedNow && !riding && barLife.freeSeatNear(pos, takenSeats()) >= 0

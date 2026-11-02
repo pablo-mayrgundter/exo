@@ -1,5 +1,6 @@
-// A test fixture, not shipped: a stand-in for the sky mode proposed to
-// celestiary (layer.html?sky=1), to check exo's host side end to end. Serve
+// A test fixture, not shipped: a stand-in for celestiary's sky guest
+// (sky.html), to check exo's host side end to end without it. It draws any
+// view it's sent, as the host's live camera asks. Serve
 // it on a second loopback origin and point exo at it with ?sky_src=:
 //
 //   npx vite test/fixtures/sky-guest --host 127.0.0.1 --port 5481

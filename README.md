@@ -79,9 +79,15 @@ by the community that gathers at [exo.cafe](https://exo.cafe).
   up, peace, OK, fists) as light skeletons. Video never leaves your
   machine.
 - **Pablo's abode** is through the arch, at human scale: the portal
-  carries a real 224,000× magnification. Its sky is ready to come from
-  [celestiary](https://celestiary.org) through NetGL once celestiary's
-  layer page has a sky mode; until then it's procedural.
+  carries a real 224,000× magnification. Its sky is
+  [celestiary](https://celestiary.org)'s own, through NetGL:
+  - celestiary runs whole, landed at the abode's place on Earth (its
+    `sky.html`);
+  - it draws your camera's view each frame, with its day, sunsets, air,
+    clouds and stars, at the abode's ×600 time;
+  - until it's in, or if it can't be, the dusk is procedural;
+  - `?sky=0` skips it; `?sky_scale=` sets its resolution (0.75 of the
+    screen's); `?sky_meter=0` asks for its cheaper exposure.
 - **Out the door, the Grid.** A gate on the street jacks you into
   [NetMap](https://pablo-mayrgundter.github.io/netmap/), maps of the
   internet you can travel. The gate is a window onto it, live: NetMap's
