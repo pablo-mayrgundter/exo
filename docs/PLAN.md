@@ -259,7 +259,8 @@ the shape of the net.*
   - [x] Harder to recognize: presets shift the pitch and the formants (8-bit +3/+2 semitones, high +9/+5, low −7/−4); the mode button cycles them and your own voice
   - [x] Visor mouths open with each voice's level, yours and others'
   - [ ] Tune the 8-bit voice with real speakers (the tests used espeak): unvoiced threshold, pitch quantization strength, the presets' shifts; Max's own voice for his lines
-  - [ ] Push to talk, and voice activity detection to send nothing in silence
+  - [x] Push to talk: hold T (not while typing; losing focus lets go), or the Hold to talk button on a touch screen; a gate after the voice opens in ~10 ms and closes over ~120 ms so word ends aren't clipped; the light reads ○ MIC while waiting, ● TALK while sending; remembered
+  - [ ] Voice activity detection, to send nothing in silence with an open mic
   - [ ] AI re-voicing (speech-to-speech, e.g. an RVC-style model on WebGPU) as a third mode, if it can run locally in real time
   - [ ] An SFU (LiveKit, as MatrixRTC uses) past ~6 talkers
   - [ ] murmur (Mumble) per room, with positional audio; or WebRTC SFU — decide with Bldrs Collab

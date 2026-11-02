@@ -47,6 +47,7 @@
     <button type="button" id="share" aria-pressed="true" title="Let people near you see you at your rez">Share rez</button>
     <button type="button" id="mirror" aria-pressed="false">Mirror my face</button>
     <button type="button" id="voice" aria-pressed="false" title="Talk to the people near you (your mic)">Voice</button>
+    <button type="button" id="ptt" aria-pressed="false" title="Open mic, or talk only while you hold T (or the Hold to talk button)">Open mic</button>
     <button type="button" id="maxvoice" title="How Max sounds: NES blips, his words (a voice model fetched once), or quiet">Max: blips</button>
     <button type="button" id="voicemode" title="How you sound: an 8-bit voice made from yours (normal, high or low), or your own">8-bit</button>
     <button type="button" id="viewmode" aria-pressed="false" title="First or third person (V; or scroll)">View · 3rd</button>
@@ -71,6 +72,7 @@
 <!-- Touch screens only (touch.js): buttons for E and Enter, and the jukebox's J, N, M. -->
 <div id="touchbar" class="touchbar" hidden>
   <button type="button" id="act" class="act" hidden></button>
+  <button type="button" id="hold" class="hold" hidden>Hold to talk</button>
   <button type="button" id="talk" class="talk" aria-label="Chat" aria-expanded="false" aria-controls="chat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v10H10l-4 4v-4H4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg><span id="talk-unread" class="unread" hidden></span></button>
 </div>
 <div id="jukebox-ctl" class="jukebox-ctl" role="group" aria-label="Jukebox" hidden><button type="button" data-jb="toggle">Play</button><button type="button" data-jb="next">Next</button><button type="button" data-jb="mute">Mute</button></div>

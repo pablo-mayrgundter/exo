@@ -70,7 +70,9 @@ by the community that gathers at [exo.cafe](https://exo.cafe).
   they hear an 8-bit voice made from yours in your browser (a chiptune
   vocoder: your words and intonation, played on a square wave and NES
   noise, pitch and formants shifted so you're harder to recognize; the
-  button cycles 8-bit, high and low); *Real voice* sends your own. Visor mouths move as people talk.
+  button cycles 8-bit, high and low); *Real voice* sends your own. *Open
+  mic* or *Push to talk*: then hold T (or, on a phone, the Hold to talk
+  button) to be heard. Visor mouths move as people talk.
 - **Your face, your avatar.** *Mirror my face* runs MediaPipe's face,
   pose and hand landmarkers in your browser: your face on the visor, your
   head turning its head, your arms raising its arms, your hands (thumbs
