@@ -41,7 +41,8 @@ export class P2PTransport {
       join = mod.joinRoom
     }
     const config = { appId: APP_ID }
-    if (relay) config.relayConfig = { urls: [relay] }
+    // Public relays come and go; one refusing a message isn't news (we report real failures ourselves).
+    config.relayConfig = { warnOnRelayFailure: false, ...(relay ? { urls: [relay] } : {}) }
     if (turn) config.turnConfig = turn
     this.room = join(config, room, {
       onJoinError: (d) => console.warn('exo: a peer could not connect', d?.error ?? d),

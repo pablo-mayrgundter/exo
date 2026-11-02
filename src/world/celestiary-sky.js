@@ -200,7 +200,8 @@ export function makeCelestiarySky({ renderer, site, epochMs = Date.now(), search
     stats.status = 'procedural'
     stats.reason = reason
     uniforms.skyOn.value = 0
-    console.warn(`[sky] ${reason}; keeping the procedural sky`)
+    // Expected until celestiary's layer page has a sky mode: information, not a warning.
+    console.info(`[sky] ${reason}; keeping the procedural sky`)
     dispose()
   }
 

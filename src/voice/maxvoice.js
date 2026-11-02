@@ -9,10 +9,29 @@
 // tune for everyone.
 //
 // Lines queue rather than talk over each other; when they pile up, his
-// thinking aloud gives way to what he says to people.
+// thinking aloud gives way to what he says to people. In words mode he
+// speaks sentence by sentence (the next one is made while this one plays),
+// keeps thinking aloud to blips (it's long, and frequent), and a line whose
+// words come later than STALE after he said it is dropped, not played late.
 import { renderBabble } from './babble.js'
 
 export const MAX_MODES = ['blips', 'words', 'quiet']
+const STALE = 8 // seconds
+
+/** A line in sentence-sized pieces (long sentences split at commas), to speak as they're made. */
+export function chunks(text) {
+  const out = []
+  for (const s of String(text).match(/[^.!?]+[.!?]*\s*/g) ?? []) {
+    if (s.length <= 140) { if (s.trim()) out.push(s.trim()); continue }
+    let cur = ''
+    for (const part of s.split(/(?<=[,;:])\s+/)) {
+      if (cur && cur.length + part.length > 140) { out.push(cur.trim()); cur = '' }
+      cur += (cur ? ' ' : '') + part
+    }
+    if (cur.trim()) out.push(cur.trim())
+  }
+  return out
+}
 const MAX_PRESET = { shift: -4, formant: -3 } // the 8-bit voice, a bit lower than a visitor's
 
 /**
@@ -49,8 +68,9 @@ export function makeMaxVoice({ voice, onStatus = () => {} }) {
     worker = new Worker(new URL('./kokoro-worker.js', import.meta.url), { type: 'module' })
     worker.onmessage = (e) => {
       const m = e.data
-      if (m.type === 'progress') onStatus(`Fetching Max's voice: ${Math.round((100 * m.loaded) / m.total)}%`)
-      else if (m.type === 'ready') { ready = true; onStatus('Max speaks.') }
+      if (m.type === 'progress') onStatus(`Fetching Max's voice: ${Math.round((100 * m.loaded) / m.total)}% (blips until then)`)
+      else if (m.type === 'device') onStatus(`Fetching Max's voice for ${m.device === 'webgpu' ? 'your GPU' : 'your CPU'} (about ${m.mb} MB, once)…`)
+      else if (m.type === 'ready') { ready = true; onStatus(`Max speaks${m.device === 'wasm' ? ' (on your CPU: he takes a moment)' : ''}.`) }
       else if (m.type === 'audio') { pending.get(m.id)?.(m); pending.delete(m.id) }
       else if (m.type === 'error') {
         if (m.id) { pending.get(m.id)?.(null); pending.delete(m.id); return }
@@ -69,23 +89,31 @@ export function makeMaxVoice({ voice, onStatus = () => {} }) {
       mode = 'blips'
       e.preventDefault?.()
     }
-    onStatus("Fetching Max's voice (about 90 MB, once)…")
     worker.postMessage({ type: 'load' })
   }
 
-  /** Samples for a line, in the current mode (null: nothing to play). */
-  async function render(line) {
-    const c = chain().c
-    if (mode === 'words' && worker && ready) {
-      const id = nextId++
-      const got = await new Promise((resolve) => {
-        pending.set(id, resolve)
-        worker.postMessage({ type: 'say', id, text: line.text })
-      })
-      if (got) return { samples: got.samples, rate: got.rate, words: true }
-    }
-    if (mode === 'quiet') return null
-    return { samples: renderBabble(line.text, c.sampleRate, { base: 165 }), rate: c.sampleRate, words: false }
+  /** Asks the worker for a piece of a line; resolves to {samples, rate} or null. */
+  function synth(text) {
+    const id = nextId++
+    return new Promise((resolve) => {
+      pending.set(id, resolve)
+      worker.postMessage({ type: 'say', id, text })
+    })
+  }
+
+  /** Plays samples through his chain (words through the 8-bit voice); resolves when done. */
+  async function sound(samples, rate, words) {
+    if (!samples?.length) return
+    const { c, gain } = chain()
+    const buf = c.createBuffer(1, samples.length, rate)
+    buf.copyToChannel(samples, 0)
+    const src = c.createBufferSource()
+    src.buffer = buf
+    if (words) {
+      out.chip ??= await voice.chipNode(MAX_PRESET).catch(() => null)
+      if (out.chip) { src.connect(out.chip); out.chip.connect(gain) } else src.connect(gain)
+    } else src.connect(gain) // blips are 8-bit already
+    await new Promise((resolve) => { src.onended = resolve; src.start() })
   }
 
   async function play() {
@@ -93,20 +121,24 @@ export function makeMaxVoice({ voice, onStatus = () => {} }) {
     const line = queue.shift()
     playing = line
     try {
-      const r = await render(line)
-      if (!r || !r.samples.length) return
-      const { c, gain } = chain()
-      const buf = c.createBuffer(1, r.samples.length, r.rate)
-      buf.copyToChannel(r.samples, 0)
-      const src = c.createBufferSource()
-      src.buffer = buf
-      // Words go through the 8-bit voice; blips are 8-bit already.
-      if (r.words) {
-        out.chip ??= await voice.chipNode(MAX_PRESET).catch(() => null)
-        if (out.chip) { src.connect(out.chip); out.chip.connect(gain) } else src.connect(gain)
-      } else src.connect(gain)
-      await new Promise((resolve) => { src.onended = resolve; src.start() })
-      try { out.chip?.disconnect() } catch { /* fine */ }
+      if (mode === 'quiet') return
+      const c = chain().c
+      if (mode === 'words' && worker && ready && !line.aside) {
+        // One piece ahead: the worker makes the next while this one plays,
+        // and a line dropped as stale doesn't keep it busy.
+        const texts = chunks(line.text)
+        let next = synth(texts[0])
+        for (let i = 0; i < texts.length; i++) {
+          const got = await next
+          if ((performance.now() - line.at) / 1000 > STALE && !line.started) return // too late to be an answer
+          next = i + 1 < texts.length ? synth(texts[i + 1]) : null
+          if (!got) continue
+          line.started = true
+          await sound(got.samples, got.rate, true)
+        }
+        return
+      }
+      await sound(renderBabble(line.text, c.sampleRate, { base: 165 }), c.sampleRate, false)
     } finally {
       playing = null
       play()
@@ -132,7 +164,7 @@ export function makeMaxVoice({ voice, onStatus = () => {} }) {
         if (aside) return
         queue.splice(i >= 0 ? i : 0, 1)
       }
-      queue.push({ text: String(text).replace(/[*_`#]/g, ''), aside })
+      queue.push({ text: String(text).replace(/[*_`#]/g, ''), aside, at: performance.now() })
       play()
     },
     /** Where his head is (metres, the listener's frame). */

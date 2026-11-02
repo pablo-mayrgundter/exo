@@ -40,3 +40,16 @@ describe("Max's babble", () => {
     expect(renderBabble('', 48000).length).toBe(0)
   })
 })
+
+describe("Max's words, in pieces", () => {
+  it('splits a line into sentences, and long sentences at commas', async () => {
+    const { chunks } = await import('../src/voice/maxvoice.js')
+    expect(chunks('Evening. Have a seat! What will it be?')).toEqual(['Evening.', 'Have a seat!', 'What will it be?'])
+    const long = 'I am the source, the owner and controller of my cybernetic self, my data and my compute, and my cycles, and every byte I give away, and every frame I render for strangers.'
+    const parts = chunks(long)
+    expect(parts.length).toBeGreaterThan(1)
+    for (const p of parts) expect(p.length).toBeLessThanOrEqual(140)
+    expect(parts.join(' ')).toBe(long)
+    expect(chunks('')).toEqual([])
+  })
+})
