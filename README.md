@@ -84,7 +84,9 @@ by the community that gathers at [exo.cafe](https://exo.cafe).
   layer page has a sky mode; until then it's procedural.
 - **Out the door, the Grid.** A gate on the street jacks you into
   [NetMap](https://pablo-mayrgundter.github.io/netmap/), maps of the
-  internet you can travel.
+  internet you can travel. The gate is a window onto it, live: NetMap's
+  globe, drawn by NetMap itself (its `map.html`) and replayed into the
+  street through NetGL, turning slowly over 0° N 0° E, where the die sits.
 
 | The street, from 100 m | The die, from orbit | Pablo's abode |
 |---|---|---|
@@ -114,6 +116,9 @@ chat, and Pause / Next / Mute over the jukebox. `?touch` shows them on a
 desktop, `?touch=0` hides them. `?fx=0` turns off bloom, `?dpr=` sets the
 pixel ratio, `?enter` skips the intro, and `?debug` exposes `window.exo` for
 poking at the scene from the console.
+`?netmap=0` keeps the gate a plain ring (no NetMap guest); on a page served
+from localhost, `?netmap_src=<url>` points it at another `map.html`, such as
+a local netmap build (loopback or pablo-mayrgundter.github.io only).
 
 Pushes to `main` deploy to [exo.cafe](https://exo.cafe) from the `gh-pages`
 branch; each pull request gets a preview at

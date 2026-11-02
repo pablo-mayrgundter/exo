@@ -16,7 +16,8 @@ import { BODY_UM, BODY_PER_LAYOUT, CHIP_UNIT_UM, DIE_GEO, formatLength } from '.
 import { makeBar } from './world/bar.js'
 import { makeAbode, ABODE_RATE } from './world/abode.js'
 import { PortalPair } from './world/portal.js'
-import { neonTexture, FONT_MONO } from './world/textures.js'
+import { makeGate } from './world/gate.js'
+import { makeNetMapWindow } from './world/netmap-window.js'
 import { Avatar, TIERS, SIP } from './avatar/avatar.js'
 import { FaceTracker } from './avatar/face.js'
 import { Ledger, allocation } from './mist/ledger.js'
@@ -94,7 +95,8 @@ world.add(bar.group)
 const jukebox = makeJukebox({ position: [-7.9, -6.2], rotation: 0.35, note, touch }) // the north-west corner, by the back bar
 bar.group.add(jukebox.group)
 bar.colliders.push(jukebox.collider)
-const gate = makeGate()
+// The gate to NetMap, with a live window onto it (netmap-window.js).
+const gate = makeGate({ netmap: makeNetMapWindow({ renderer }) })
 world.add(gate.group)
 const abode = makeAbode({ renderer })
 const portal = new PortalPair(
@@ -821,7 +823,7 @@ controls.onClick = (e) => {
 }
 
 // A handle for tests and the console: ?debug
-if (params.has('debug')) window.exo = { get clock() { return clock }, p2p, voice, maxVoice, terminals, setView, barLife, sitDown, standUp, others, mist, vcpu, worker, car, life, show, mind, face, give, avatar, controls, bar, floor, abode, portal, camera, renderer, ledger, presence, chipFrame, cafe, get side() { return side }, get tick() { return tick } }
+if (params.has('debug')) window.exo = { get clock() { return clock }, p2p, voice, maxVoice, terminals, setView, barLife, sitDown, standUp, others, mist, vcpu, worker, car, life, show, mind, face, give, avatar, controls, bar, floor, abode, portal, gate, camera, renderer, ledger, presence, chipFrame, cafe, get side() { return side }, get tick() { return tick } }
 if (window.exo) window.exo.jukebox = jukebox
 
 // --- Loop ---
@@ -1190,30 +1192,6 @@ function makeGrid() {
   m.scale.setScalar(20000)
   m.renderOrder = -3
   return m
-}
-
-/** The gate to NetMap, on the street outside the door. */
-function makeGate() {
-  const group = new THREE.Group()
-  group.position.set(9, 0, 22)
-  group.rotation.y = -0.5
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(2.6, 0.08, 8, 64), new THREE.MeshBasicMaterial({ color: C.green, toneMapped: false }))
-  ring.position.y = 2.7
-  const inner = new THREE.Mesh(new THREE.TorusGeometry(2.2, 0.03, 6, 64), new THREE.MeshBasicMaterial({ color: C.cyan, toneMapped: false }))
-  inner.position.y = 2.7
-  const sign = new THREE.Mesh(new THREE.PlaneGeometry(6, 1.1), new THREE.MeshBasicMaterial({
-    map: neonTexture('NETMAP · JACK IN', { color: '#84f55c', font: FONT_MONO, size: 76, height: 160 }),
-    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false,
-  }))
-  sign.position.y = 6.1
-  group.add(ring, inner, sign)
-  const g = { group, near: false }
-  g.update = (t, p) => {
-    inner.rotation.z = t * 0.8
-    ring.rotation.y = Math.sin(t * 0.5) * 0.15
-    g.near = !!p && p.distanceTo(group.position) < 4.5
-  }
-  return g
 }
 
 function loadSelf() {

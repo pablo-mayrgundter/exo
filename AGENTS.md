@@ -97,6 +97,27 @@ would otherwise rediscover.
   in Node to listen, and to check a received stream is the 8-bit one, see
   whether its pitch lands on semitones (opus smears the 7-bit grid, not
   the pitch). `exo.voice` has `speakers`, `levelFor(id)`, `streamFor(id)`.
+- **NetGL guests in tests (the gate's NetMap, the abode's sky).** The
+  real guests are on hosts the sandbox can't reach. For the gate, build
+  netmap (`web/`: `python -m netmap build --topology synthetic` for data,
+  ~2 min, then `npm run build`) and serve `dist` on another loopback port
+  with `python3 -m http.server <port> --directory …/web/dist` (by path: it
+  survives rebuilds, unlike a server started inside `dist`); open
+  `?enter&debug&fresh&netmap_src=http://127.0.0.1:<port>/map.html`. For a
+  quick check without netmap, `test/fixtures/map-guest` speaks the same
+  protocol (`npx vite test/fixtures/map-guest --host 127.0.0.1 --port …`).
+  Other sessions on the machine may hold ports (5482 was); pick free ones.
+  `exo.gate.netmap.stats` has `status` ('live' once a frame is in),
+  `views`, `frames`, `costMs`; `exo.gate.netmap.target` is the render
+  target (`renderer.readRenderTargetPixels` it for the window alone).
+  Stand in front of the gate in first person: `exo.setView('first')`,
+  avatar at `(9 − 0.479·7, 0, 22 + 0.878·7)`, `controls.yaw = −0.5`.
+- **deck.gl under SwiftShader is very slow.** NetMap's globe took ~20 s
+  a frame at 512² on a busy 4-core sandbox (in netmap's own page too), and it's paid inside one of
+  exo's frames, so the window paces itself to a frame every minute or two
+  there; `page.screenshot` times out while one lands. Read the canvas back
+  instead, right after the app's render in the same animation frame:
+  `requestAnimationFrame(() => canvas.toDataURL())`.
 - **Element ids are global.** The canvas is `#view` (and styled full
   screen); a control named the same quietly becomes the canvas. Check
   `index.html` before naming a new element.

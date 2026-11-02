@@ -31,6 +31,7 @@
 // page served from loopback may point elsewhere (?sky_src=, loopback or
 // celestiary.org only). ?sky=0 keeps the procedural sky without asking.
 import * as THREE from 'three'
+import { isLocalOrigin, resolveGuestSrc } from './guest-src.js'
 
 export const SKY_SRC = 'https://celestiary.org/layer.html'
 /** Origins the guest may come from in any build. */
@@ -45,17 +46,7 @@ export const SKY_REFRESH_MS = 2_000
 const RESEND_MS = 5_000
 const NEAR = 1, FAR = 1e8
 
-const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
-
-/** Whether `origin` is a loopback origin, any port. */
-export function isLocalOrigin(origin) {
-  try {
-    const u = new URL(origin)
-    return (u.protocol === 'http:' || u.protocol === 'https:') && LOCAL_HOSTS.has(u.hostname)
-  } catch {
-    return false
-  }
-}
+export { isLocalOrigin }
 
 /**
  * The guest page to load. `?sky_src=` counts only on a loopback page (or a
@@ -63,17 +54,7 @@ export function isLocalOrigin(origin) {
  * @returns {{src: string, origin: string, rejected: string|null}}
  */
 export function resolveSkySrc({ param = null, pageOrigin, dev = false }) {
-  if (param) {
-    const local = dev || isLocalOrigin(pageOrigin)
-    let u = null
-    try { u = new URL(param) } catch { /* rejected below */ }
-    const ok = local && u && !u.username && !u.password &&
-      (u.protocol === 'https:' || (u.protocol === 'http:' && isLocalOrigin(u.origin))) &&
-      (SKY_ORIGINS.includes(u.origin) || isLocalOrigin(u.origin))
-    if (ok) return { src: u.href, origin: u.origin, rejected: null }
-    return { src: SKY_SRC, origin: new URL(SKY_SRC).origin, rejected: param }
-  }
-  return { src: SKY_SRC, origin: new URL(SKY_SRC).origin, rejected: null }
+  return resolveGuestSrc({ src: SKY_SRC, origins: SKY_ORIGINS, param, pageOrigin, dev })
 }
 
 /** Whether a guest's `layer:hello` offers the sky this host asks for. */

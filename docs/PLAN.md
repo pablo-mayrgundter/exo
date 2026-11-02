@@ -29,10 +29,10 @@ Status: ✅ shipped in the first scene · 🔜 next · 💭 later.
 | **T1 Grid rendering** | three.js scenes, the Tron look (bloom, neon edges), LOD, WebGPU later | this repo, `src/world/` | ✅ first scene |
 | **T2 Chip simulation** | switch-level 6502, its programs, speed, other chips | this repo, `src/chip/`; data from [visual6502](https://github.com/trebonian/visual6502) | ✅ sim + Life |
 | **T3 Avatars and mocap** | voxel and smooth bodies, face, then body pose | this repo, `src/avatar/` | ✅ face |
-| **T4 Portals and NetGL** | doors between places; GL-level links between apps | [portal](https://github.com/pablo-mayrgundter/portal) (NetGL on npm) and `src/world/portal.js` | ✅ same-page portal; NetGL in production elsewhere |
+| **T4 Portals and NetGL** | doors between places; GL-level links between apps | [portal](https://github.com/pablo-mayrgundter/portal) (NetGL on npm) and `src/world/portal.js` | ✅ same-page portal; NetGL guests: NetMap in the gate, celestiary's sky (ready) |
 | **T5 Synchronizer** | presence, chat, voice, rooms; Matrix and murmur | `src/net/` now; shared with Bldrs Collab | 🔜 |
 | **T6 cosmic.js** | frames of space and time, reprojection, floating origin, orbits | `src/cosmic/` now, its own package later | ✅ frames and clocks |
-| **T7 NetMap** | maps of the internet; GeoNetMap; travel along real routes | [netmap](https://github.com/pablo-mayrgundter/netmap) | ✅ live, linked |
+| **T7 NetMap** | maps of the internet; GeoNetMap; travel along real routes | [netmap](https://github.com/pablo-mayrgundter/netmap) | ✅ live, linked, and live in the gate (`map.html`) |
 | **T8 Mist runtime** | donated resources, identity, local-first data, self-hosting | `src/mist/` | ✅ ledger; 🔜 shared compute |
 | **T9 Celestiary** | the sky: stars, planets, orbit.js | [celestiary](https://github.com/celestiary/web) | 💭 |
 | **T10 Platform and ops** | hosting, domain, CI, budgets, licenses | this repo, `.github/` | ✅ Pages |
@@ -214,14 +214,21 @@ the shape of the net.*
   - [ ] Recursion: see the bar through the abode's arch through the bar's arch
 
 ### E3.2 The Grid: NetMap 🔜 (T7, T4)
-- **S3.2.1** As a visitor, I can jack into NetMap from the street. ✅ (a link, for now)
+- **S3.2.1** As a visitor, I can jack into NetMap from the street. ✅ (a link, with a live window onto NetMap in the gate)
 - **S3.2.2** As a visitor, I can ride a LightSail along the internet's links. 🔜 (contracts in [portal#56](https://github.com/pablo-mayrgundter/portal/issues/56), RFC 0004)
-  - [ ] NetMap as a NetGL guest layer in exo: a guest page (`map.html`) whose deck.gl drawing is recorded and replayed into exo's scene, on an agreed frame (ECEF metres; exo's die at 0° N 0° E)
+  - [x] NetMap as a NetGL guest: netmap's `map.html` draws its globe with deck.gl into portal-netgl's recording context, one frame per `layer:view`; exo replays it into a render target (`src/world/netmap-window.js`)
+  - [ ] NetMap as a NetGL guest *layer* in exo's space: views as RFC 0001 matrices on an agreed frame (ECEF metres, RTE; exo's die at 0° N 0° E), depth-composited with the street, not a window
+  - [ ] portal-netgl: a deck guest shim (`frameworks/deck-guest.ts`?) holding what `map.html` learned: luma's drawing-buffer size set by hand, `layerManager.updateLayers()` before a forced `redraw`, `device.submit()` before `endFrame()`, deck's own redraws held back through `_customRender`
+  - [ ] map.html: fiber bundles and the MapLibre basemap (its GL calls), as the app has them
   - [ ] NetMap publishes its links and routes as path anchors (RFC 0004 §4); exo subscribes
   - [ ] The LightSail, exo's own Tron asset at µm scale, flies those paths by exo's clock; the rider is your avatar
   - [ ] portal-netgl: a second deck guest must survive the first one detaching (RFC 0004 §6)
   - [ ] Traceroute from the visitor (or their AS from the browser's IP, server-side) to exo's host
-- **S3.2.3** As a visitor, I see NetMap through a window in the bar, live. (NetGL guest; NetMap is deck.gl)
+- **S3.2.3** As a visitor, I see NetMap through a window, live. 🔜 (NetGL guest; NetMap is deck.gl)
+  - [x] The gate on the street shows the live globe (`src/world/gate.js`, `netmap-window.js`): a camera sweeping slowly over 0° N 0° E, where the die sits, marked; E still jacks in. No guest, no hello in time or no WebGL2: one console line, and the gate as it was
+  - [x] Pace: a guest frame's GPU time is sampled (1-pixel reads round a replay) and views go out no faster than keeps it near 10% of the time; under SwiftShader that's a frame every minute or two
+  - [ ] Measure the guest's cost on real GPUs (desktop, phone) and tune `MAP_SIZE`, `MAP_FRAME_MS` and the share
+  - [ ] A window in the bar too; looking around it (the view following the visitor's angle)
 - **S3.2.4** As a group, we pick where our room's server runs, on GeoNetMap, for least latency. (T5)
 
 ### E3.3 The sky: Celestiary 💭 (T9, T4, T6)
