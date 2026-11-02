@@ -36,6 +36,7 @@ export function makeVoice({ transport, id }) {
   const remotes = new Map() // presence id → { el, source, gain, panner, meter, data }
   const data = new Float32Array(512)
 
+  let worklet = null // the chip-voice module, loaded once
   function context() {
     if (!ctx) {
       ctx = new AudioContext({ latencyHint: 'interactive' })
@@ -43,6 +44,28 @@ export function makeVoice({ transport, id }) {
     }
     if (ctx.state === 'suspended') ctx.resume().catch(() => {})
     return ctx
+  }
+  /** An 8-bit voice node (ChipVoice in the audio thread) with these settings. */
+  async function chipNode(opts) {
+    const c = context()
+    worklet ??= c.audioWorklet.addModule(workletUrl)
+    await worklet
+    return new AudioWorkletNode(c, 'chip-voice', {
+      numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1], processorOptions: opts,
+    })
+  }
+  /** Puts the listener (you) at a place, facing a direction (metres). */
+  function listen(listener, forward) {
+    if (!ctx) return
+    const L = ctx.listener, t = ctx.currentTime
+    if (L.positionX) {
+      L.positionX.setTargetAtTime(listener.x, t, 0.05); L.positionY.setTargetAtTime(listener.y, t, 0.05); L.positionZ.setTargetAtTime(listener.z, t, 0.05)
+      L.forwardX.setTargetAtTime(forward.x, t, 0.05); L.forwardY.setTargetAtTime(forward.y, t, 0.05); L.forwardZ.setTargetAtTime(forward.z, t, 0.05)
+      L.upX.value = 0; L.upY.value = 1; L.upZ.value = 0
+    } else {
+      L.setPosition(listener.x, listener.y, listener.z)
+      L.setOrientation(forward.x, forward.y, forward.z, 0, 1, 0)
+    }
   }
 
   function route() {
@@ -63,12 +86,8 @@ export function makeVoice({ transport, id }) {
     })
     src = c.createMediaStreamSource(mic)
     try {
-      await c.audioWorklet.addModule(workletUrl)
       const v = VOICES[isChip(mode) ? mode : 'chip']
-      chip = new AudioWorkletNode(c, 'chip-voice', {
-        numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
-        processorOptions: { shift: v.shift, formant: v.formant },
-      })
+      chip = await chipNode({ shift: v.shift, formant: v.formant })
     } catch (e) {
       console.warn('exo: the 8-bit voice is unavailable here; sending your own', e)
       chip = null
@@ -159,15 +178,8 @@ export function makeVoice({ transport, id }) {
      */
     place(listener, forward, voices) {
       if (!ctx) return
-      const L = ctx.listener, t = ctx.currentTime
-      if (L.positionX) {
-        L.positionX.setTargetAtTime(listener.x, t, 0.05); L.positionY.setTargetAtTime(listener.y, t, 0.05); L.positionZ.setTargetAtTime(listener.z, t, 0.05)
-        L.forwardX.setTargetAtTime(forward.x, t, 0.05); L.forwardY.setTargetAtTime(forward.y, t, 0.05); L.forwardZ.setTargetAtTime(forward.z, t, 0.05)
-        L.upX.value = 0; L.upY.value = 1; L.upZ.value = 0
-      } else {
-        L.setPosition(listener.x, listener.y, listener.z)
-        L.setOrientation(forward.x, forward.y, forward.z, 0, 1, 0)
-      }
+      listen(listener, forward)
+      const t = ctx.currentTime
       for (const [who, r] of remotes) {
         const v = voices.get(who)
         r.gain.gain.setTargetAtTime(v ? 1 : 0, t, 0.1)
@@ -179,6 +191,10 @@ export function makeVoice({ transport, id }) {
     },
     /** Forgets someone's voice (they left). */
     drop,
+    // Shared with Max's voice (maxvoice.js): one audio context, one listener.
+    context,
+    chipNode,
+    listen,
     get speakers() { return [...remotes.keys()] },
     /** A remote voice's stream (debugging and tests). */
     streamFor(who) { return remotes.get(who)?.stream ?? null },

@@ -92,6 +92,12 @@ real computer, a bartender, and other people.*
   - [x] He shuffles between stations (taps, sink, shelf, till) and leans in to each
   - [x] With customers he splits his time between chores and conversation; spells are longer with a drink in front of you
   - [x] Not in a conversation, he thinks aloud: his aphorisms, one per thought of his job on the vCPU
+- **S1.3.5** As a visitor, I hear Max. ✅ / 🔜
+  - [x] Blips by default (`src/voice/babble.js`): his lines sung as NES pulse blips, a blip a syllable on a pentatonic tune that falls over a sentence, rises at a question and brightens at an exclamation; the same tune for everyone, made in each browser from the text
+  - [x] Words if you ask (`src/voice/kokoro-worker.js`): Kokoro-82M (Apache-2.0 weights) in a worker, through the 8-bit voice with Max's own preset (−4/−3 semitones). Loaded at runtime from jsDelivr, weights from Hugging Face (~90 MB, once), never bundled: kokoro-js phonemizes with eSpeak NG (GPL-3.0). Falls back to blips if it can't load
+  - [x] From where he stands (an HRTF panner at his head), his visor mouth moving with it; lines queue, and his thinking aloud gives way when he's behind
+  - [ ] Check words on real devices: download time, first-line latency on WASM, and whether WebGPU (fp32, larger) is worth it
+  - [ ] A non-GPL phonemizer (a CMUdict lookup with letter-to-sound rules for the rest) so Max's words could be bundled
 - **S1.3.4** As Pablo, I can tend bar as Max myself. 💭 (T3, T5)
 
 ### E1.7 Stools and drinks ✅ / 🔜 (T1, T3, T8)
