@@ -90,6 +90,13 @@ would otherwise rediscover.
   `--disable-features=WebRtcHideLocalIpsWithMdns` so the two can connect
   locally. `exo.barLife.host` says who runs Max; `exo.p2p.peers` counts
   links.
+- **Voice in tests.** `espeak-ng` (apt) makes speech to test with; feed
+  it to Chromium as the mic with `--use-file-for-fake-audio-capture=x.wav`
+  (plus the fake-device flags and `permissions: ['microphone']`). The
+  vocoder (`src/voice/chipvoice.js`) is plain JS: render files through it
+  in Node to listen, and to check a received stream is the 8-bit one, see
+  whether its pitch lands on semitones (opus smears the 7-bit grid, not
+  the pitch). `exo.voice` has `speakers`, `levelFor(id)`, `streamFor(id)`.
 - **Element ids are global.** The canvas is `#view` (and styled full
   screen); a control named the same quietly becomes the canvas. Check
   `index.html` before naming a new element.

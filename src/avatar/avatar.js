@@ -224,6 +224,9 @@ export class Avatar {
     this.seated = null
     /** Face landmarks (normalized, mirrored) to draw on the visor, or null. */
     this.face = null
+    /** How open the mouth is, 0..1 (from the voice's level), on the default visor. */
+    this.mouth = 0
+    this.mouthShown = 0
     this.spawn = 1
     this.alloc = null
     this.label = null
@@ -506,8 +509,12 @@ export class Avatar {
       const eh = Math.max(1, w * 0.09 * blink)
       g.fillRect(w * 0.18, w * 0.38 - eh / 2, w * 0.24, eh)
       g.fillRect(w * 0.58, w * 0.38 - eh / 2, w * 0.24, eh)
-      g.globalAlpha = 0.6
-      g.fillRect(w * 0.32, w * 0.7, w * 0.36, Math.max(1, w * 0.04))
+      // The mouth: a line, opening as the voice gets louder (fast to open, slower to close).
+      this.mouthShown += (this.mouth - this.mouthShown) * (this.mouth > this.mouthShown ? 0.6 : 0.25)
+      const open = Math.min(1, this.mouthShown)
+      const mh = Math.max(1, w * (0.04 + open * 0.16))
+      g.globalAlpha = 0.6 + open * 0.4
+      g.fillRect(w * (0.32 + open * 0.04), w * 0.7 - mh / 2 + w * 0.02, w * (0.36 - open * 0.08), mh)
       g.globalAlpha = 1
     }
     tex.needsUpdate = true
