@@ -52,7 +52,10 @@ by the community that gathers at [exo.cafe](https://exo.cafe).
 - **Max Pablo tends bar.** He shuffles between the taps, the sink, the
   shelf and the till, splits his time between chores and customers,
   thinks his aphorisms aloud, and in conversation he's
-  [ELIZA](src/npc/eliza.js) with a bartender's script.
+  [ELIZA](src/npc/eliza.js) with a bartender's script. You hear him from
+  behind the bar: in NES blips, a blip a syllable, or, with *Max: words*,
+  in an 8-bit voice made from Kokoro, a small neural voice your browser
+  fetches once (about 90 MB, from Hugging Face).
 - **The bar remembers.** Your glass, the bottles, your tab and what you
   told Max stay in your browser; the vCPU is saved to OPFS and resumes
   exactly where it left off. `?fresh` starts it from power-on.

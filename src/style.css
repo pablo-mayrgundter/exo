@@ -217,7 +217,7 @@ button { font-family: var(--mono); }
 }
 .fold[hidden] { display: none; }
 .touch .fold.mini-btn { right: 66px; min-width: 44px; font-size: 16px; letter-spacing: 0; }
-.touch .panel.you.folded .meter, .touch .panel.you.folded #alloc, .touch .panel.you.folded #room, .touch .panel.you.folded #share, .touch .panel.you.folded #mirror, .touch .panel.you.folded #voicemode { display: none; }
+.touch .panel.you.folded .meter, .touch .panel.you.folded #alloc, .touch .panel.you.folded #room, .touch .panel.you.folded #share, .touch .panel.you.folded #mirror, .touch .panel.you.folded #voicemode, .touch .panel.you.folded #maxvoice { display: none; }
 /* Shrunk to a chip in the corner: your name and a handle to bring it back. */
 .touch .panel.you.mini { left: auto; width: auto; padding: 4px 48px 4px 12px; cursor: pointer; }
 /* …and the CAM light, which stays in sight while your camera is on. */

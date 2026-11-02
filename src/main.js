@@ -35,6 +35,7 @@ import { touchMode, pixelRatio, promptFor, placeAbove, jukeboxLabels, fovFor } f
 import { Thread, mountThread } from './chat/thread.js'
 import { makeNotifier } from './notify.js'
 import { makeVoice, VOICES } from './voice/voice.js'
+import { makeMaxVoice, MAX_MODES } from './voice/maxvoice.js'
 import { MANIFESTO, MIST, MAX } from './content.js'
 
 const $ = (id) => document.getElementById(id)
@@ -214,6 +215,13 @@ const voice = makeVoice({ transport: p2p, id: me.id })
 let voiceMode = 'chip'
 try { const m = localStorage.getItem('exo.cafe/voice-mode'); if (VOICES[m]) voiceMode = m } catch { /* 8-bit */ }
 voice.setMode(voiceMode)
+// Max's voice: blips by default, words if you ask (voice/maxvoice.js).
+const maxVoice = makeMaxVoice({ voice, onStatus: (t) => note(t) })
+{
+  let m = 'blips'
+  try { const s = localStorage.getItem('exo.cafe/max-voice'); if (MAX_MODES.includes(s)) m = s } catch { /* blips */ }
+  maxVoice.setMode(m)
+}
 // Audio may start only after a gesture on the page.
 for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => voice.unlock(), { passive: true })
 // One Max for the room: whoever's been here longest runs him (the host),
@@ -464,6 +472,19 @@ $('voicemode').addEventListener('click', () => {
 })
 showVoice()
 
+const MAX_LABELS = { blips: 'Max: blips', words: 'Max: words', quiet: 'Max: quiet' }
+function showMaxVoice() { $('maxvoice').textContent = MAX_LABELS[maxVoice.mode] }
+$('maxvoice').addEventListener('click', () => {
+  const next = MAX_MODES[(MAX_MODES.indexOf(maxVoice.mode) + 1) % MAX_MODES.length]
+  maxVoice.setMode(next)
+  try { localStorage.setItem('exo.cafe/max-voice', next) } catch { /* fine */ }
+  if (next === 'blips') note('Max talks in blips, a blip a syllable.')
+  if (next === 'quiet') note('Max is subtitles only.')
+  showMaxVoice()
+})
+showMaxVoice()
+setInterval(showMaxVoice, 2000) // the mode can fall back to blips if words don't load
+
 $('mirror').addEventListener('click', async () => {
   const btn = $('mirror')
   if (face.running) {
@@ -647,7 +668,10 @@ function maxSays(text, { aside = false } = {}) {
   bar.max.say(text, 8)
   // Into the conversation, if you're in the bar to hear him; thinking aloud
   // is there to read but doesn't count as unread.
-  if (side === 0) thread.add({ kind: 'max', who: 'Max Pablo', text, aside })
+  if (side === 0) {
+    thread.add({ kind: 'max', who: 'Max Pablo', text, aside })
+    maxVoice.say(text, { aside })
+  }
   lastMax = performance.now()
   // On a stool, in first person, his bubble is above the frame: subtitle it.
   if (barLife?.seat == null) return
@@ -768,13 +792,13 @@ controls.onClick = (e) => {
 }
 
 // A handle for tests and the console: ?debug
-if (params.has('debug')) window.exo = { get clock() { return clock }, p2p, voice, terminals, setView, barLife, sitDown, standUp, others, mist, vcpu, worker, car, life, show, mind, face, give, avatar, controls, bar, floor, abode, portal, camera, renderer, ledger, presence, chipFrame, cafe, get side() { return side }, get tick() { return tick } }
+if (params.has('debug')) window.exo = { get clock() { return clock }, p2p, voice, maxVoice, terminals, setView, barLife, sitDown, standUp, others, mist, vcpu, worker, car, life, show, mind, face, give, avatar, controls, bar, floor, abode, portal, camera, renderer, ledger, presence, chipFrame, cafe, get side() { return side }, get tick() { return tick } }
 if (window.exo) window.exo.jukebox = jukebox
 
 // --- Loop ---
 const clock = new THREE.Clock()
 let lastPublish = 0, lastHud = 0, greeted = false
-const HEAD = new THREE.Vector3(0, 1.6, 0), EAR_FWD = new THREE.Vector3()
+const HEAD = new THREE.Vector3(0, 1.6, 0), EAR_FWD = new THREE.Vector3(), MAX_HEAD = new THREE.Vector3()
 // In a background tab the frame loop stops, and with it presence; a slow
 // heartbeat keeps you in the room as away (timers run at most once a
 // second there, or once a minute after a while), and you hand Max on.
@@ -946,6 +970,13 @@ function frame() {
   }
   // Voices from where people stand (heads, in metres), and mouths that move with them.
   avatar.mouth = voice.on ? Math.min(1, voice.level() * 7) : 0
+  // You hear from your head, facing where you look; Max from his.
+  camera.getWorldDirection(EAR_FWD)
+  voice.listen(avatar.group.position.clone().add(HEAD), EAR_FWD)
+  if (maxVoice.speaking && avatar.group.parent) {
+    maxVoice.place(avatar.group.parent.worldToLocal(bar.max.group.localToWorld(MAX_HEAD.set(0, 1.6, 0))))
+  }
+  bar.max.mouth = Math.min(1, maxVoice.level() * 7)
   if (voice.speakers.length) {
     const here = side ? 'abode' : 'world'
     const voices = new Map()
