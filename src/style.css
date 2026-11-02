@@ -217,7 +217,7 @@ button { font-family: var(--mono); }
 }
 .fold[hidden] { display: none; }
 .touch .fold.mini-btn { right: 66px; min-width: 44px; font-size: 16px; letter-spacing: 0; }
-.touch .panel.you.folded .meter, .touch .panel.you.folded #alloc, .touch .panel.you.folded #room, .touch .panel.you.folded #share, .touch .panel.you.folded #mirror, .touch .panel.you.folded #voicemode, .touch .panel.you.folded #maxvoice { display: none; }
+.touch .panel.you.folded .meter, .touch .panel.you.folded #alloc, .touch .panel.you.folded #room, .touch .panel.you.folded #share, .touch .panel.you.folded #mirror, .touch .panel.you.folded #voicemode, .touch .panel.you.folded #maxvoice, .touch .panel.you.folded #ptt { display: none; }
 /* Shrunk to a chip in the corner: your name and a handle to bring it back. */
 .touch .panel.you.mini { left: auto; width: auto; padding: 4px 48px 4px 12px; cursor: pointer; }
 /* …and the CAM light, which stays in sight while your camera is on. */
@@ -306,4 +306,11 @@ button { font-family: var(--mono); }
 
 /* The mic, while it's on: a light, like the camera's. */
 .buttons button#voice.live { background: none; color: #ff6b6b; border-color: #ff6b6b; }
+.buttons button#voice.live.idle { opacity: 0.6; }
+.buttons button#voice.live.idle::before { content: '○ '; }
+.touchbar .hold {
+  min-height: 64px; padding: 0 22px; color: #ff6b6b; border: 1px solid #ff6b6b; touch-action: none;
+  -webkit-user-select: none; user-select: none;
+}
+.touchbar .hold:active { background: #ff6b6b; color: var(--void); }
 #voice.live::before { content: '● '; }

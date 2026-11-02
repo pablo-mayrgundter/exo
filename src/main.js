@@ -439,10 +439,17 @@ $('cam').addEventListener('click', () => {
 
 function showVoice() {
   const b = $('voice')
+  // The light: on and sending (● MIC, or ● TALK while you hold the key), or on and waiting for it (○ MIC).
   b.classList.toggle('live', voice.on)
+  b.classList.toggle('idle', voice.on && !voice.live)
   b.setAttribute('aria-pressed', String(voice.on))
-  b.textContent = voice.on ? 'MIC' : 'Voice'
-  b.title = voice.on ? 'Your mic is on: people near you hear you (click to turn it off)' : 'Talk to the people near you (your mic)'
+  b.textContent = !voice.on ? 'Voice' : voice.ptt ? (voice.live ? 'TALK' : 'MIC') : 'MIC'
+  b.title = !voice.on ? 'Talk to the people near you (your mic)'
+    : voice.ptt ? 'Your mic is on, sending only while you hold T (click to turn it off)'
+    : 'Your mic is on: people near you hear you (click to turn it off)'
+  $('ptt').textContent = voice.ptt ? (touch ? 'Push to talk' : 'Push to talk · T') : 'Open mic'
+  $('ptt').setAttribute('aria-pressed', String(voice.ptt))
+  $('hold').hidden = !(touch && voice.on && voice.ptt)
   $('voicemode').textContent = VOICES[voiceMode].label
   $('voicemode').setAttribute('aria-pressed', String(voiceMode !== 'real'))
 }
@@ -462,6 +469,28 @@ $('voice').addEventListener('click', async () => {
     showVoice()
   }
 })
+// Push to talk: hold T (not while typing), or the Hold to talk button on a
+// touch screen. Losing focus lets go, so you're never stuck on air.
+try { voice.setPtt(localStorage.getItem('exo.cafe/ptt') === 'on') } catch { /* open mic */ }
+$('ptt').addEventListener('click', () => {
+  voice.setPtt(!voice.ptt)
+  try { localStorage.setItem('exo.cafe/ptt', voice.ptt ? 'on' : 'off') } catch { /* fine */ }
+  if (voice.on) note(voice.ptt ? 'Push to talk: hold T to be heard.' : 'Open mic: people near you hear you.')
+  showVoice()
+})
+const talk = (down) => { if (voice.ptt) { voice.talk(down); showVoice() } }
+addEventListener('keydown', (e) => {
+  if (e.code !== 'KeyT' || e.repeat || e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
+  talk(true)
+})
+addEventListener('keyup', (e) => { if (e.code === 'KeyT') talk(false) })
+addEventListener('blur', () => talk(false))
+document.addEventListener('visibilitychange', () => { if (document.hidden) talk(false) })
+for (const [ev, down] of [['pointerdown', true], ['pointerup', false], ['pointercancel', false], ['pointerleave', false]]) {
+  $('hold').addEventListener(ev, (e) => { e.preventDefault(); talk(down) })
+}
+$('hold').addEventListener('contextmenu', (e) => e.preventDefault())
+
 $('voicemode').addEventListener('click', () => {
   // 8-bit, 8-bit high, 8-bit low, your own voice, and round again.
   const order = Object.keys(VOICES)

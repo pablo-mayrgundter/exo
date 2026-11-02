@@ -30,6 +30,11 @@ export function makeVoice({ transport, id }) {
   let ctx = null
   let mic = null // MediaStream from getUserMedia
   let src = null, chip = null, out = null, meter = null
+  // Push to talk: a gate after the voice, open only while you hold the key
+  // (or, with an open mic, always). It opens fast and closes slowly, so the
+  // ends of words aren't clipped.
+  let gate = null
+  let ptt = false, talking = false
   let mode = 'chip'
   let on = false
   let starting = null
@@ -75,8 +80,19 @@ export function makeVoice({ transport, id }) {
     if (chip && isChip(mode)) chip.port.postMessage({ shift: VOICES[mode].shift, formant: VOICES[mode].formant })
     const head = isChip(mode) && chip ? chip : src
     if (head === chip) src.connect(chip)
-    head.connect(out)
-    head.connect(meter)
+    head.connect(gate)
+    gate.connect(out)
+    gate.connect(meter)
+    shut()
+  }
+
+  /** Opens or closes the gate to match push to talk and the key. */
+  function shut() {
+    if (!gate) return
+    const open = !ptt || talking
+    const t = ctx.currentTime
+    gate.gain.cancelScheduledValues(t)
+    gate.gain.setTargetAtTime(open ? 1 : 0, t, open ? 0.01 : 0.04)
   }
 
   async function start() {
@@ -94,6 +110,8 @@ export function makeVoice({ transport, id }) {
       mode = 'real'
     }
     out = c.createMediaStreamDestination()
+    gate = c.createGain()
+    gate.gain.value = ptt ? 0 : 1
     meter = c.createAnalyser()
     meter.fftSize = 512
     route()
@@ -104,8 +122,9 @@ export function makeVoice({ transport, id }) {
   function stop() {
     if (out) transport?.removeStream(out.stream)
     mic?.getTracks().forEach((t) => t.stop())
-    for (const n of [src, chip, meter]) try { n?.disconnect() } catch { /* fine */ }
-    mic = src = chip = out = meter = null
+    for (const n of [src, chip, gate, meter]) try { n?.disconnect() } catch { /* fine */ }
+    mic = src = chip = out = meter = gate = null
+    talking = false
     on = false
   }
 
@@ -165,6 +184,13 @@ export function makeVoice({ transport, id }) {
       mode = m
       route()
     },
+    /** Push to talk on or off (off: an open mic). */
+    setPtt(on) { ptt = !!on; shut() },
+    get ptt() { return ptt },
+    /** Holding the talk key (or button) down, or letting go. */
+    talk(down) { if (talking === !!down) return; talking = !!down; shut() },
+    /** Is your voice going out right now? */
+    get live() { return on && (!ptt || talking) },
     /** Lets audio start: browsers allow it only after a gesture on the page. */
     unlock() { if (ctx || remotes.size) context() },
     /** Your voice's level (0..~0.5), for your visor's mouth. */
