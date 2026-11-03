@@ -108,11 +108,24 @@ const portal = new PortalPair(
   { scene: abode.scene, anchor: abode.portalAnchor },
   { width: 2.4, height: 3.2 })
 const scenes = [world, abode.scene]
+// From the bar, the abode's sky drawn in place in the doorway's target, under the abode.
+portal.underlay = (i, target) => i === 1 && !!abode.sky?.drawInto(target)
 let side = 0 // 0: the world (bar and street), 1: the abode
 
 // --- Post: bloom, the Tron glow ---
 const composer = new EffectComposer(renderer)
 const renderPass = new RenderPass(world, camera)
+// In the abode, celestiary's sky drawn in place first (celestiary-sky.js
+// drawInto), and the abode over it, its depth cleared, no colour clear.
+composer.addPass({
+  enabled: true, needsSwap: false, renderToScreen: false,
+  setSize() {}, dispose() {},
+  render(r, _write, read) {
+    const under = side === 1 && !!abode.sky?.drawInto(read)
+    if (under) r.clear(false, true, true)
+    renderPass.clear = !under
+  },
+})
 composer.addPass(renderPass)
 const BLOOM_THRESHOLD = 0.22
 const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.75, 0.55, BLOOM_THRESHOLD)
@@ -122,6 +135,14 @@ if (touch) {
   const setSize = bloom.setSize.bind(bloom)
   bloom.setSize = (w, h) => setSize(w / renderer.getPixelRatio(), h / renderer.getPixelRatio())
 }
+// Pixels tagged by a doorway (alpha below zero, portal.js) are the other
+// side's, and take its threshold: thresholdThere.
+bloom.highPassUniforms.thresholdThere = { value: BLOOM_THRESHOLD }
+bloom.materialHighPassFilter.fragmentShader = bloom.materialHighPassFilter.fragmentShader
+  .replace('uniform float smoothWidth;', 'uniform float smoothWidth;\nuniform float thresholdThere;')
+  .replace('float alpha = smoothstep( luminosityThreshold, luminosityThreshold + smoothWidth, v );',
+    'float th = mix( luminosityThreshold, thresholdThere, clamp( -texel.a, 0.0, 1.0 ) );\n\t\t\tfloat alpha = smoothstep( th, th + smoothWidth, v );\n\t\t\ttexel.a = 1.0;')
+bloom.materialHighPassFilter.needsUpdate = true
 if (params.get('fx') !== '0') composer.addPass(bloom)
 composer.addPass(new OutputPass())
 
@@ -985,8 +1006,11 @@ function frame() {
   jukebox.update(dt, side === 0 ? avatar.group.getWorldPosition(meAt) : null)
   abode.update(abodeFrame.time, now)
   // Under celestiary's daylight the whole sky is brighter than the bloom's
-  // threshold; raise it with the day so the glow stays the neon's.
-  bloom.threshold = side === 1 ? BLOOM_THRESHOLD + (0.9 - BLOOM_THRESHOLD) * abode.daylight : BLOOM_THRESHOLD
+  // threshold; raise it with the day so the glow stays the neon's. Through
+  // a doorway, the other side's (thresholdThere).
+  const abodeThreshold = BLOOM_THRESHOLD + (0.9 - BLOOM_THRESHOLD) * abode.daylight
+  bloom.threshold = side === 1 ? abodeThreshold : BLOOM_THRESHOLD
+  bloom.highPassUniforms.thresholdThere.value = side === 1 ? BLOOM_THRESHOLD : abodeThreshold
   gate.update(now, side === 0 ? pos : null)
   const nearCar = side === 0 && pos.distanceTo(car.group.position) < 4.5
   const nearSeat = side === 0 && !seatedNow && !riding && barLife.freeSeatNear(pos, takenSeats()) >= 0

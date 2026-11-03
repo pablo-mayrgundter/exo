@@ -38,7 +38,8 @@ const basic = (o) => new THREE.MeshBasicMaterial({ toneMapped: false, ...o })
 export function makeAbode({ renderer } = {}) {
   const scene = new THREE.Scene()
   scene.name = 'abode'
-  scene.background = new THREE.Color(0x0b0a2a)
+  const background = new THREE.Color(0x0b0a2a)
+  scene.background = background
   scene.fog = new THREE.Fog(0x1a1240, 60, 220)
   const colliders = []
   const r = rng(1009)
@@ -262,6 +263,13 @@ export function makeAbode({ renderer } = {}) {
       if (celestiary) {
         celestiary.update(abodeTime)
         pole.visible = !celestiary.on
+        // Drawn in place (celestiary-sky.js drawInto), the sky is under the
+        // abode already: the dome draws nothing (it still says the abode is
+        // in view), and there's no background colour, which three would
+        // clear the frame to.
+        const inPlace = celestiary.direct
+        sky.material.colorWrite = !inPlace
+        scene.background = inPlace ? null : background
       }
       candleMat.uniforms.t.value = wallTime
     },

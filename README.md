@@ -89,6 +89,11 @@ by the community that gathers at [exo.cafe](https://exo.cafe).
   - Each frame waits for the sky drawn for its own camera (a sync render,
     as the portals are), at a pixel per CSS pixel as celestiary's own page
     draws; `?sky_scale=2` is a retina screen's own pixels.
+  - It's drawn in place, not on a dome: celestiary's own final pass (its
+    air, its tone map) replays straight into the frame the abode is drawn
+    into, inside the abode or through the arch from the bar, and the abode
+    goes over it. `?sky_direct=0` puts it back on a dome, looked up by
+    direction (as for a guest that can't write linear colour).
   - `?sky=0` skips it; `?sky_sync=0` lets the sky's frames come on their
     own instead, placed by direction (`?sky_still_ms=` paces them while you
     look still); `?sky_meter=0` asks for its cheaper exposure.

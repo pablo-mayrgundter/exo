@@ -34,7 +34,11 @@ export class PortalPair {
             // A shimmer at the rim, so the doorway reads as a doorway.
             float e = min(min(vUv.x, 1.0 - vUv.x), 1.0 - vUv.y);
             float rim = exp(-e * 40.0) * (0.6 + 0.4 * sin(time * 3.0 + vUv.y * 20.0));
-            gl_FragColor = vec4(c + vec3(0.42, 0.92, 0.95) * rim, 1.0);
+            // Alpha below zero tags the other side's pixels, so the bloom
+            // takes that side's threshold for them (main.js): a daylit
+            // abode through the door glows as it does inside, not white.
+            // The rim is this side's.
+            gl_FragColor = vec4(c + vec3(0.42, 0.92, 0.95) * rim, -1.0 + min(rim, 1.0));
           }`,
       })
       s.surface = new THREE.Mesh(new THREE.PlaneGeometry(width, height), mat)
@@ -78,7 +82,17 @@ export class PortalPair {
     there.surface.visible = false
     const prev = renderer.getRenderTarget()
     renderer.setRenderTarget(this.target)
-    renderer.render(there.scene, v)
+    // Something drawn first, under the scene (the abode's sky, in place):
+    // the scene goes over it with its depth cleared, and no clear of colour.
+    if (this.underlay?.(1 - i, this.target, v)) {
+      renderer.clear(false, true, true)
+      const autoClear = renderer.autoClear
+      renderer.autoClear = false
+      renderer.render(there.scene, v)
+      renderer.autoClear = autoClear
+    } else {
+      renderer.render(there.scene, v)
+    }
     renderer.setRenderTarget(prev)
     there.surface.visible = true
   }

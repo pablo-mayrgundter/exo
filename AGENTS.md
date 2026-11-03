@@ -133,6 +133,12 @@ would otherwise rediscover.
   there; `page.screenshot` times out while one lands. Read the canvas back
   instead, right after the app's render in the same animation frame:
   `requestAnimationFrame(() => canvas.toDataURL())`.
+- **A frame held for the sky draws nothing.** In sync the loop returns
+  early while it waits for celestiary's frame (up to 250 ms), so a canvas
+  read in such an animation frame is empty (white in a PNG viewer), and on
+  SwiftShader most are. Read it inside the draw: wrap `exo.renderer.render`
+  and call `toDataURL()` after the render whose target is null (the output
+  pass).
 - **Element ids are global.** The canvas is `#view` (and styled full
   screen); a control named the same quietly becomes the canvas. Check
   `index.html` before naming a new element.
