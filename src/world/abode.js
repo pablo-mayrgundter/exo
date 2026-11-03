@@ -15,6 +15,8 @@ import { makeCelestiarySky, sunAltitude } from './celestiary-sky.js'
 import { BAR } from './bar.js'
 
 export const ABODE_RATE = 600
+/** celestiary's sky fades in from black over this, ms, once its first frame is in. */
+export const SKY_FADE_MS = 1500
 /** Through twilight, under celestiary's sky, it slows to this: dawn and dusk last, and the meter keeps up. */
 export const ABODE_TWILIGHT_RATE = 60
 
@@ -46,13 +48,16 @@ export function makeAbode({ renderer } = {}) {
   const r = rng(1009)
 
   // Sky: celestiary's, drawn in place under the abode (celestiary-sky.js
-  // drawInto) once it comes; until then, or if it can't, a dusk gradient
+  // drawInto). Until its first frame, black; then it fades in from black
+  // (the dome, black, over it, thinning). If it can't come, a dusk gradient
   // dome over procedural stars on a sphere that turns with the abode's clock.
   const celestiary = renderer ? makeCelestiarySky({ renderer, site: ABODE_SITE }) : null
+  const domeUniforms = { uBlack: { value: celestiary ? 1 : 0 }, uAlpha: { value: 1 } }
   const sky = new THREE.Mesh(new THREE.SphereGeometry(400, 32, 16), new THREE.ShaderMaterial({
-    side: THREE.BackSide, depthWrite: false, fog: false,
+    side: THREE.BackSide, depthWrite: false, fog: false, transparent: true,
+    uniforms: domeUniforms,
     vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-    fragmentShader: `varying vec3 vP;
+    fragmentShader: `varying vec3 vP; uniform float uBlack, uAlpha;
       void main(){
         float h = vP.y;
         // Linear colours: dusk orange at the horizon, violet, then night.
@@ -60,12 +65,12 @@ export function makeAbode({ renderer } = {}) {
         vec3 mid = vec3(0.09, 0.03, 0.14);
         vec3 top = vec3(0.004, 0.006, 0.03);
         vec3 c = h < 0.12 ? mix(horizon, mid, smoothstep(-0.02, 0.12, h)) : mix(mid, top, smoothstep(0.12, 0.6, h));
-        gl_FragColor = vec4(c, 1.0);
+        gl_FragColor = vec4(mix(c, vec3(0.0), uBlack), uAlpha);
       }`,
   }))
   // The guest starts when the abode is first drawn, from either side, and
   // draws for the camera that drew it last. Under celestiary's sky the dome
-  // still draws, colour off, to say the abode is in view.
+  // still draws (thinning black as it fades in, then colour off).
   if (celestiary) sky.onBeforeRender = (_r, _s, camera) => celestiary.seen(camera)
   scene.add(sky)
   const starPos = []
@@ -249,11 +254,15 @@ export function makeAbode({ renderer } = {}) {
       pole.rotation.y = (abodeTime / 86164) * Math.PI * 2
       if (celestiary) {
         celestiary.update(abodeTime)
-        pole.visible = !celestiary.on
+        pole.visible = !celestiary.on && !celestiary.pending
         // celestiary's sky is under the abode already (drawInto): the dome
         // draws nothing, and there's no background colour, which three
         // would clear the frame to.
-        sky.material.colorWrite = !celestiary.on
+        const shown = celestiary.on && celestiary.shownAt !== null
+        const fade = shown ? THREE.MathUtils.smoothstep((performance.now() - celestiary.shownAt) / SKY_FADE_MS, 0, 1) : 0
+        domeUniforms.uBlack.value = celestiary.on || celestiary.pending ? 1 : 0
+        domeUniforms.uAlpha.value = 1 - fade
+        sky.material.colorWrite = fade < 1
         scene.background = celestiary.on ? null : background
       }
       candleMat.uniforms.t.value = wallTime

@@ -375,8 +375,6 @@ if (params.has('enter')) enter()
 function enter() {
   if (entered) return
   entered = true
-  // celestiary's sky loads now, so it's in by the time you reach the arch.
-  abode.sky?.warm()
   const name = $('handle').value.trim().slice(0, 24) || me.name
   me.name = name
   saveSelf(me)

@@ -134,16 +134,11 @@ export function skyProjection(projectionMatrix) {
   return [e[0], 0, 0, 0, 0, e[5], 0, 0, 0, 0, (FAR + NEAR) / (NEAR - FAR), -1, 0, 0, (2 * FAR * NEAR) / (NEAR - FAR), 0]
 }
 
-/** Until the abode is seen, a view to draw a first frame for, so celestiary's first-frame work is done before you get there. */
-const WARM_CAMERA = {
-  matrixWorld: new THREE.Matrix4().makeRotationX(0.35),
-  projectionMatrix: new THREE.PerspectiveCamera(60, 16 / 9, 0.1, 100).projectionMatrix,
-}
-
 /**
- * The celestiary sky for the abode. Starts when exo is entered (`warm`), or
- * when the abode is first drawn (`seen(camera)`), whichever is first, and
- * stands down to the procedural sky on any failure.
+ * The celestiary sky for the abode. Starts when the abode is first drawn
+ * (`seen(camera)`): on demand, so entering exo isn't slowed by it. Until its
+ * first frame the abode's sky is black (`pending`), and then fades in from
+ * black (`shownAt`); on any failure it stands down to the procedural sky.
  * @param {object} o
  * @param {THREE.WebGLRenderer} o.renderer
  * @param {{lat: number, lon: number}} o.site
@@ -161,6 +156,7 @@ export function makeCelestiarySky({ renderer, site, epochMs = Date.now(), search
   const stats = { status: 'idle', reason: null, origin: null, hello: null, views: 0, frames: 0, lastTimeMs: 0, latencyMs: 0, size: [0, 0] }
 
   let started = false, failed = false
+  let shownAt = null // when the first frame was drawn
   // The last camera that drew the abode, as it was then.
   let camera = null
   let net = null // { receiver, iframe, timers }
@@ -334,11 +330,9 @@ export function makeCelestiarySky({ renderer, site, epochMs = Date.now(), search
     if (!net || stats.status === 'connecting' || !isSkyHello(stats.hello)) return
     if (inFlight && now - inFlight.sentAt > RESEND_MS) inFlight = null // lost: ask again
     // Once the sky is in, the frame loop asks (request) for each frame's
-    // camera; until then, this does, one view at a time, for the abode's
-    // camera if it has been seen and a stand-in if not: the first frame
-    // (its shaders, its uploads) is then done before you reach the arch.
+    // camera; until then, this does, one view at a time.
     if (stats.status === 'sky') return
-    if (!inFlight && !document.hidden) { camera ??= WARM_CAMERA; sendView(timeMs) }
+    if (!inFlight && !document.hidden) sendView(timeMs)
   }
 
   /**
@@ -359,6 +353,7 @@ export function makeCelestiarySky({ renderer, site, epochMs = Date.now(), search
       renderer.resetState()
       renderer.setRenderTarget(target)
     }
+    shownAt ??= performance.now()
     keep(perf.drains, Math.round((performance.now() - t0) * 10) / 10)
     if (perfOn) {
       // The replay's GPU work too: a 1-pixel read waits for it (perf only: it stalls).
@@ -412,8 +407,10 @@ export function makeCelestiarySky({ renderer, site, epochMs = Date.now(), search
     seen,
     /** The abode's time as Unix ms. */
     timeMs: (abodeTime) => epochMs + abodeTime * 1000,
-    /** Start loading celestiary now, ahead of the abode coming into view. */
-    warm() { if (!started && !failed) start() },
+    /** Whether celestiary's sky is still to come: not in yet, and not given up on. */
+    get pending() { return !failed && stats.status !== 'procedural' && !on() },
+    /** performance.now() when its first frame was drawn, or null. */
+    get shownAt() { return shownAt },
     /**
      * Whether this frame should wait for the sky drawn for its camera: the
      * sky on, and the abode to be drawn this frame (`drawn`: the caller

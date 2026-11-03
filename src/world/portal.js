@@ -71,10 +71,9 @@ export class PortalPair {
     const here = this.sides[i], there = this.sides[1 - i]
     here.surface.material.uniforms.res.value.copy(size)
     here.surface.material.uniforms.time.value = time
-    // Skip when the doorway is behind the camera or edge-on.
-    const toCam = camera.getWorldPosition(new THREE.Vector3()).sub(here.anchor.getWorldPosition(new THREE.Vector3()))
-    const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(here.anchor.getWorldQuaternion(new THREE.Quaternion()))
-    if (toCam.dot(normal) <= 0) return
+    // Skip when the doorway is out of view, behind the camera or edge-on:
+    // the other side isn't drawn at all (and the abode's sky isn't asked for).
+    if (!this.visible(camera, i)) return
     // Close to the door (in its own units: metres), the surface gets depth.
     here.anchor.updateWorldMatrix(true, false)
     const local = camera.getWorldPosition(new THREE.Vector3()).applyMatrix4(here.anchor.matrixWorld.clone().invert())
