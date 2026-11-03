@@ -229,6 +229,14 @@ the shape of the net.*
   - [x] Pace: a guest frame's GPU time is sampled (1-pixel reads round a replay) and views go out no faster than keeps it near 10% of the time; under SwiftShader that's a frame every minute or two
   - [ ] Measure the guest's cost on real GPUs (desktop, phone) and tune `MAP_SIZE`, `MAP_FRAME_MS` and the share
   - [ ] A window in the bar too; looking around it (the view following the visitor's angle)
+- **S3.2.5** As a visitor, NetMap lies under exo's world, and I can drop into it anywhere through the gate. 🔜 (T7, T4; asked 2026-11-03)
+  - Decided: the map at **true scale** (1 µm is 1 µm; the chip at 0° N 0° E, a fictitious link from it to anywhere for the LightSail later); **geo** by default, cyber and hybrid switchable; you return through **a gate** where you land.
+  - The frame: exo's street is the tangent plane at 0° N 0° E (x east, y up, z south, µm). ECEF metres to it: `x = Y·1e6`, `y = (X − R)·1e6`, `z = −Z·1e6`. netmap draws in ECEF (geo on its sphere; cyber and hybrid as its layouts put them on the same surface), and exo sends RFC 0001 matrix views relative to the eye (RFC 0004 §1, `view.eye`), so float32 holds at 10¹² µm.
+  - What you see from the street: nothing yet. At 8 µm tall the horizon is ~10 m off, and the Gulf of Guinea lies under the chip; the map shows from altitude, so it shows after the drop.
+  - [ ] map.html: matrix views (ECEF, shared depth, `projection: geo | cyber | hybrid`) beside today's globe-camera views
+  - [ ] The gate: pick a spot on its globe (exo inverts the view it sent: lon, lat, fit), marked; walk through and drop out of the sky over it
+  - [ ] The landing place: a new side like the abode, its own frame (origin at the spot, floating), netmap drawn round it with exo's depth; a return gate to the street
+  - [ ] Open: the visitor's size there (the gate magnifies, as the abode's arch does ×224,000, or you stay µm-sized over a true-scale Earth), the drop's height, and what's underfoot (netmap's land and ocean)
 - **S3.2.4** As a group, we pick where our room's server runs, on GeoNetMap, for least latency. (T5)
 
 ### E3.3 The sky: Celestiary 🚧 (T9, T4, T6)
