@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import * as THREE from 'three'
 import {
-  resolveSkySrc, isSkyHello, gmstRad, eqToWorld, skyViewMatrix, skyProjection, skyLookup, sunAltitude, SKY_OVERSCAN, SKY_SRC,
+  resolveSkySrc, isSkyHello, gmstRad, eqToWorld, skyViewMatrix, skyProjection, skyLookup, skyOverscan, sunAltitude, SKY_OVERSCAN, SKY_MAX_OVERSCAN, SKY_SRC,
 } from '../src/world/celestiary-sky.js'
 
 // celestiary.org/layer.html's hello as published (2026-10-30): orbits only.
@@ -89,12 +89,12 @@ describe("the camera's view", () => {
   camera.position.set(3, 1.7, -2) // where it stands doesn't matter: the sky is at infinity
   camera.rotation.set(0.4, -1.1, 0, 'YXZ')
   camera.updateMatrixWorld()
-  const vp = new THREE.Matrix4().fromArray(skyProjection(camera)).multiply(new THREE.Matrix4().fromArray(skyViewMatrix(camera, M)))
+  const vp = new THREE.Matrix4().fromArray(skyProjection(camera.projectionMatrix)).multiply(new THREE.Matrix4().fromArray(skyViewMatrix(camera.matrixWorld, M)))
   // A world direction, in the equator of date.
   const eq = (w) => w.clone().applyMatrix3(M.clone().transpose())
 
   it('is a rotation, with no translation', () => {
-    const V = new THREE.Matrix4().fromArray(skyViewMatrix(camera, M))
+    const V = new THREE.Matrix4().fromArray(skyViewMatrix(camera.matrixWorld, M))
     expect(V.determinant()).toBeCloseTo(1, 9)
     expect(V.elements.slice(12, 15)).toEqual([0, 0, 0])
   })
@@ -121,5 +121,46 @@ describe("the Sun's height, for the daylight", () => {
     expect(at('2026-11-02T12:00:00Z')).toBeCloseTo(19.5, 0)
     expect(at('2026-11-02T16:15:00Z')).toBeCloseTo(-0.4, 0)
     expect(at('2026-11-02T18:30:00Z')).toBeCloseTo(-18.8, 0)
+  })
+})
+
+describe('a portal\'s camera, and a turning head', () => {
+  it("draws for a camera whose matrixWorld was set directly, as the portal's virtual camera is", () => {
+    // Its position and rotation are never set: only matrixWorld and the projection.
+    const v = new THREE.PerspectiveCamera()
+    const real = new THREE.PerspectiveCamera(70, 1.6, 0.1, 100)
+    real.rotation.set(0.3, 2.2, 0, 'YXZ')
+    real.updateMatrixWorld()
+    v.matrixWorld.copy(real.matrixWorld)
+    v.projectionMatrix.copy(real.projectionMatrix)
+    v.projectionMatrix.elements[10] = -3 // an oblique near plane only changes the depth row
+    const M = eqToWorld(Date.UTC(2026, 10, 3, 6), { lat: 55.6, lon: 0 })
+    const a = new THREE.Matrix4().fromArray(skyProjection(v.projectionMatrix)).multiply(new THREE.Matrix4().fromArray(skyViewMatrix(v.matrixWorld, M)))
+    const b = new THREE.Matrix4().fromArray(skyProjection(real.projectionMatrix)).multiply(new THREE.Matrix4().fromArray(skyViewMatrix(real.matrixWorld, M)))
+    expect(a.elements.map((x) => +x.toFixed(9))).toEqual(b.elements.map((x) => +x.toFixed(9)))
+    // And what it looks at is the frame's middle.
+    const ahead = new THREE.Vector3(0, 0, -1).transformDirection(real.matrixWorld).applyMatrix3(M.clone().transpose())
+    const [u, w] = skyLookup(a, ahead)
+    expect(u).toBeCloseTo(0.5, 9)
+    expect(w).toBeCloseTo(0.5, 9)
+  })
+  it('widens the frame for the turn the head makes while it is on its way', () => {
+    const t = Math.tan(35 * Math.PI / 180)
+    expect(skyOverscan(t, 0, 0.2)).toBe(SKY_OVERSCAN)
+    const turning = skyOverscan(t, 1.5, 0.2) // 1.5 rad/s for 0.2 s
+    expect(turning).toBeGreaterThan(SKY_OVERSCAN)
+    expect(skyOverscan(t, 50, 2)).toBe(SKY_MAX_OVERSCAN)
+  })
+})
+
+describe("the abode's clock", () => {
+  it('runs ×600, and ×60 through twilight', async () => {
+    const { abodeRate, ABODE_RATE, ABODE_TWILIGHT_RATE } = await import('../src/world/abode.js')
+    expect(abodeRate(40)).toBe(ABODE_RATE)
+    expect(abodeRate(-40)).toBe(ABODE_RATE)
+    expect(abodeRate(-6)).toBe(ABODE_TWILIGHT_RATE)
+    expect(abodeRate(0)).toBe(ABODE_TWILIGHT_RATE)
+    expect(abodeRate(6)).toBeGreaterThan(ABODE_TWILIGHT_RATE)
+    expect(abodeRate(6)).toBeLessThan(ABODE_RATE)
   })
 })

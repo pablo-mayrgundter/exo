@@ -75,7 +75,9 @@ const chipFrame = new Frame('6502', {
   origin: [-NMI_PAD[0] * BODY_PER_LAYOUT, 0, NMI_PAD[1] * BODY_PER_LAYOUT],
   rate: () => chipHz / 2 / 1e6, // chip seconds per bar second, against its native 1 MHz
 })
-const abodeFrame = new Frame('Abode', { parent: wall, rate: ABODE_RATE })
+// ×600, slowed through twilight under celestiary's sky (abode.rate; set once the abode is built).
+let abodeRateAt = () => ABODE_RATE
+const abodeFrame = new Frame('Abode', { parent: wall, rate: () => abodeRateAt(abodeFrame.time) })
 
 // --- Scenes ---
 const world = new THREE.Scene()
@@ -99,6 +101,7 @@ bar.colliders.push(jukebox.collider)
 const gate = makeGate({ netmap: makeNetMapWindow({ renderer }) })
 world.add(gate.group)
 const abode = makeAbode({ renderer })
+abodeRateAt = (t) => abode.rate(t)
 const portal = new PortalPair(
   { scene: world, anchor: bar.portalAnchor },
   { scene: abode.scene, anchor: abode.portalAnchor },

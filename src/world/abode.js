@@ -11,9 +11,21 @@
 import * as THREE from 'three'
 import { C } from '../theme.js'
 import { rng, neonTexture, FONT_MONO } from './textures.js'
-import { makeCelestiarySky, SKY_GLSL } from './celestiary-sky.js'
+import { makeCelestiarySky, SKY_GLSL, sunAltitude } from './celestiary-sky.js'
 
 export const ABODE_RATE = 600
+/** Through twilight, under celestiary's sky, it slows to this: dawn and dusk last, and the meter keeps up. */
+export const ABODE_TWILIGHT_RATE = 60
+
+/**
+ * The abode's clock rate for the Sun's altitude: ×600, easing to ×60
+ * between 15° below the horizon and 3° above it (6° ramps each side), so a
+ * day is still a few minutes and a sunset most of one.
+ */
+export function abodeRate(sunAlt) {
+  const slow = THREE.MathUtils.smoothstep(sunAlt, -21, -15) * (1 - THREE.MathUtils.smoothstep(sunAlt, 3, 9))
+  return ABODE_RATE + (ABODE_TWILIGHT_RATE - ABODE_RATE) * slow
+}
 /**
  * Where the abode's sky is seen from: the latitude the procedural sky's
  * pole was tilted for (0.6 rad from the zenith), on the prime meridian.
@@ -236,6 +248,8 @@ export function makeAbode({ renderer } = {}) {
     sky: celestiary,
     /** 0 at night to 1 by day under celestiary's sky; 0 under the procedural dusk. */
     get daylight() { return celestiary?.daylight ?? 0 },
+    /** The clock's rate at abode time `t`: slowed through twilight under celestiary's sky (abodeRate). */
+    rate(t) { return celestiary?.on ? abodeRate(sunAltitude(celestiary.timeMs(t), ABODE_SITE)) : ABODE_RATE },
     spawn: new THREE.Vector3(0, 0, 13),
     /** @param {number} abodeTime seconds on the abode's clock */
     update(abodeTime, wallTime) {

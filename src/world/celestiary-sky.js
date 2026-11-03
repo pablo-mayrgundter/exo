@@ -43,6 +43,8 @@ export const SKY_ORIGINS = ['https://celestiary.org']
 export const SKY_TIMEOUTS = { load: 30_000, hello: 30_000, sky: 90_000 }
 /** How much wider than the camera's the guest's view is, in the tangent of the half field. */
 export const SKY_OVERSCAN = 1.3
+/** The most it widens while the head turns. */
+export const SKY_MAX_OVERSCAN = 3
 /** The sky's pixels per screen pixel, by default; and the largest side, px. */
 export const SKY_SCALE = 0.75
 const SKY_MAX_SIDE = 2048
@@ -111,23 +113,38 @@ export function eqToWorld(timeMs, { lat, lon }, out = new THREE.Matrix3()) {
 /**
  * A camera's view from the equator of date (column-major): its rotation
  * in abode space, after the sky's turn at the time. No translation.
- * @param {THREE.Camera} camera with its matrixWorld current
+ * @param {THREE.Matrix4} matrixWorld the camera's, as it drew the dome
+ *   (a portal's virtual camera has only this: its position and rotation
+ *   are never set, so updateMatrixWorld would lose it)
  * @param {THREE.Matrix3} worldFromEq eqToWorld's
  */
-export function skyViewMatrix(camera, worldFromEq) {
-  const eyeFromWorld = new THREE.Matrix4().extractRotation(camera.matrixWorld).transpose()
+export function skyViewMatrix(matrixWorld, worldFromEq) {
+  const eyeFromWorld = new THREE.Matrix4().extractRotation(matrixWorld).transpose()
   const m = new THREE.Matrix4().setFromMatrix3(worldFromEq)
   return eyeFromWorld.multiply(m).toArray()
 }
 
 /**
- * The guest's perspective (column-major): the camera's, its field widened
- * by `overscan` in the tangent, the same aspect.
+ * The guest's perspective (column-major): the camera's field, read off its
+ * projection matrix (x and y scales; a portal's oblique near plane changes
+ * only the depth row), widened by `overscan` in the tangent.
+ * @param {THREE.Matrix4} projectionMatrix the camera's, as it drew the dome
  */
-export function skyProjection(camera, overscan = SKY_OVERSCAN) {
-  const t = Math.tan((camera.fov * Math.PI) / 360) * overscan
-  const f = 1 / t, aspect = camera.aspect
-  return [f / aspect, 0, 0, 0, 0, f, 0, 0, 0, 0, (FAR + NEAR) / (NEAR - FAR), -1, 0, 0, (2 * FAR * NEAR) / (NEAR - FAR), 0]
+export function skyProjection(projectionMatrix, overscan = SKY_OVERSCAN) {
+  const e = projectionMatrix.elements
+  const fx = e[0] / overscan, fy = e[5] / overscan
+  return [fx, 0, 0, 0, 0, fy, 0, 0, 0, 0, (FAR + NEAR) / (NEAR - FAR), -1, 0, 0, (2 * FAR * NEAR) / (NEAR - FAR), 0]
+}
+
+/**
+ * How much wider than the camera to ask for: SKY_OVERSCAN, and room for the
+ * turn the head makes while the frame is on its way (`turnRate` rad/s over
+ * `latency` s), at a vertical field whose half-angle's tangent is `tanHalf`.
+ */
+export function skyOverscan(tanHalf, turnRate, latency) {
+  const extra = Math.min(0.8, Math.max(0, turnRate * latency * 1.5))
+  const k = Math.tan(Math.min(1.45, Math.atan(tanHalf) + extra)) / tanHalf
+  return Math.min(SKY_MAX_OVERSCAN, Math.max(SKY_OVERSCAN, k))
 }
 
 /**
@@ -144,30 +161,41 @@ export function skyLookup(vp, d) {
 }
 
 /** The dome's uniforms for the sky (abode.js reads them in its shader). */
-function skyUniforms(target) {
+function skyUniforms(targets) {
   return {
-    skyTex: { value: target.texture },
+    skyTex: { value: targets[0].texture }, // the last frame
+    skyTex2: { value: targets[1].texture }, // the one before, where the last doesn't reach
     skyEq: { value: new THREE.Matrix3() }, // equator of date ← world
-    skyVP: { value: new THREE.Matrix4() }, // the shown frame's: clip ← equator of date
+    skyVP: { value: new THREE.Matrix4() }, // the last frame's: clip ← equator of date
+    skyVP2: { value: new THREE.Matrix4() },
     skyOn: { value: 0 },
+    skyOn2: { value: 0 },
   }
 }
 
 /** GLSL for the dome's fragment shader: `skySample(dWorld)` → linear colour and coverage. */
 export const SKY_GLSL = `
-  uniform sampler2D skyTex; uniform mat3 skyEq; uniform mat4 skyVP; uniform float skyOn;
+  uniform sampler2D skyTex, skyTex2; uniform mat3 skyEq; uniform mat4 skyVP, skyVP2; uniform float skyOn, skyOn2;
   vec3 skyLinear(vec3 c){ return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c)); }
-  vec4 skySample(vec3 w){
-    vec3 d = normalize(skyEq * w);
-    vec4 c = skyVP * vec4(d, 0.0);
+  // A frame's colour (rgb) and how well it covers direction d (a), fading over its last few percent.
+  vec4 skyFrame(sampler2D tex, mat4 vp, vec3 d){
+    vec4 c = vp * vec4(d, 0.0);
     if (c.w <= 0.0) return vec4(0.0);
     vec2 ndc = c.xy / c.w;
-    // Fades out over the frame's last few percent, into the dusk.
     vec2 edge = smoothstep(vec2(1.0), vec2(0.94), abs(ndc));
     float a = edge.x * edge.y;
     if (a <= 0.0) return vec4(0.0);
-    // The guest's frame is display-referred and opaque.
-    return vec4(skyLinear(texture2D(skyTex, 0.5 + 0.5 * ndc).rgb), a);
+    return vec4(skyLinear(texture2D(tex, 0.5 + 0.5 * ndc).rgb), a);
+  }
+  vec4 skySample(vec3 w){
+    vec3 d = normalize(skyEq * w);
+    vec4 s = skyFrame(skyTex, skyVP, d);
+    if (s.a < 1.0 && skyOn2 > 0.5) {
+      // The frame before, where the last one doesn't reach (a head turning faster than frames come).
+      vec4 t = skyFrame(skyTex2, skyVP2, d);
+      s = vec4(mix(t.rgb, s.rgb, s.a / max(s.a + t.a * (1.0 - s.a), 1e-4)), s.a + t.a * (1.0 - s.a));
+    }
+    return s;
   }`
 
 /**
@@ -180,14 +208,26 @@ export const SKY_GLSL = `
  * @param {string} [o.search] the page's query (location.search)
  */
 export function makeCelestiarySky({ renderer, site, epochMs = Date.now(), search = globalThis.location?.search ?? '' }) {
-  const target = new THREE.WebGLRenderTarget(16, 16, { depthBuffer: true, generateMipmaps: false })
-  target.texture.minFilter = target.texture.magFilter = THREE.LinearFilter
-  const uniforms = skyUniforms(target)
+  // Two targets in turn: the frame being shown and the one before it.
+  const targets = [0, 1].map(() => {
+    const t = new THREE.WebGLRenderTarget(16, 16, { depthBuffer: true, generateMipmaps: false })
+    t.texture.minFilter = t.texture.magFilter = THREE.LinearFilter
+    return t
+  })
+  let front = 0 // the target the last frame is in
+  const uniforms = skyUniforms(targets)
+  // What the sky costs here (?sky_perf=1): the replay's time, the frames' latency, the bytes.
+  const perf = { drains: [], latency: [], bytes: [], long: [], gpu: [], since: performance.now() }
+  const keep = (a, v, n = 300) => { a.push(v); if (a.length > n) a.shift() }
   const params = new URLSearchParams(search)
+  const perfOn = params.get('sky_perf')
   const scale = Math.min(2, Math.max(0.25, Number(params.get('sky_scale')) || SKY_SCALE))
-  const stats = { status: 'idle', reason: null, origin: null, hello: null, views: 0, frames: 0, lastTimeMs: 0, latencyMs: 0, size: [0, 0] }
+  const stats = { status: 'idle', reason: null, origin: null, hello: null, views: 0, frames: 0, lastTimeMs: 0, latencyMs: 0, size: [0, 0], overscan: SKY_OVERSCAN }
 
-  let seenAt = -Infinity, camera = null, started = false, failed = false
+  let seenAt = -Infinity, started = false, failed = false
+  // The last camera that drew the dome, as it was then: its matrices, and how fast it turns.
+  let camera = null
+  const look = { dir: new THREE.Vector3(), at: 0, rate: 0 }
   let net = null // { receiver, iframe, timers }
   let inFlight = null // { viewId, sentAt }
   let viewId = 0
@@ -223,6 +263,7 @@ export function makeCelestiarySky({ renderer, site, epochMs = Date.now(), search
     const url = new URL(src)
     url.searchParams.set('host', location.origin)
     if (params.get('sky_meter') === '0') url.searchParams.set('meter', '0')
+    if (perfOn) url.searchParams.set('perf', perfOn === 'sync' ? 'sync' : '1')
     const iframe = document.createElement('iframe')
     iframe.title = 'celestiary sky renderer (draws into the abode)'
     iframe.setAttribute('aria-hidden', 'true')
@@ -250,7 +291,7 @@ export function makeCelestiarySky({ renderer, site, epochMs = Date.now(), search
       transport: core.iframeTransport(iframe, { origin }),
       replay: {
         // The guest's screen is our sky target.
-        screenFramebuffer: () => renderer.properties.get(target).__webglFramebuffer ?? null,
+        screenFramebuffer: () => renderer.properties.get(targets[1 - front]).__webglFramebuffer ?? null,
         screen: { clear: 'none' },
       },
       onControl: (msg) => {
@@ -266,9 +307,17 @@ export function makeCelestiarySky({ renderer, site, epochMs = Date.now(), search
             return fail(`${origin}'s guest (${msg.adapter ?? msg.kind ?? '?'}: kinds ${JSON.stringify(c.kinds ?? [])}, frames ${JSON.stringify(c.frames ?? [])}) has no sky mode`)
           }
           stats.status = 'loading'
+          if (perfOn) receiver.post({ type: 'layer:stats-subscribe', intervalMs: 1000 })
           later(SKY_TIMEOUTS.sky, () => { if (!stats.frames) fail(`no sky from ${origin} in ${SKY_TIMEOUTS.sky / 1000} s`) })
         } else if (msg?.type === 'layer:status' && msg.status === 'error') {
           fail(`${origin}: ${msg.message || 'error'}`)
+        } else if (msg?.type === 'layer:stats') {
+          perf.guestStats ??= []
+          const { type, ...rest } = msg
+          keep(perf.guestStats, rest, 60)
+        } else if (msg?.type === 'sky:perf') {
+          perfWaiting.get(msg.id)?.(msg.snapshot ?? null)
+          perfWaiting.delete(msg.id)
         }
       },
       onError: (err) => console.debug('[sky] replay error', err),
@@ -277,21 +326,29 @@ export function makeCelestiarySky({ renderer, site, epochMs = Date.now(), search
     net = { receiver, iframe, timers }
   }
 
-  /** The sky target at the drawing buffer's size × scale, held under SKY_MAX_SIDE. */
+  /**
+   * The targets at the drawing buffer's size × scale × SKY_OVERSCAN, held
+   * under SKY_MAX_SIDE. Not by the turn's wider overscan: a resize clears
+   * the frame on show, so a turning head gets fewer pixels a degree instead.
+   */
   function size() {
     const buf = renderer.getDrawingBufferSize(new THREE.Vector2())
-    const k = Math.min(scale * SKY_OVERSCAN, SKY_MAX_SIDE / Math.max(buf.x, buf.y, 1))
-    const w = Math.max(16, Math.round(buf.x * k)), h = Math.max(16, Math.round(buf.y * k))
-    if (target.width !== w || target.height !== h) target.setSize(w, h)
+    const f = Math.min(scale * SKY_OVERSCAN, SKY_MAX_SIDE / Math.max(buf.x, buf.y, 1))
+    const w = Math.max(64, Math.round(buf.x * f)), h = Math.max(64, Math.round(buf.y * f))
+    if (targets[0].width !== w || targets[0].height !== h) {
+      for (const t of targets) t.setSize(w, h)
+      uniforms.skyOn2.value = 0 // the frame before is gone
+    }
     stats.size = [w, h]
     return [w, h]
   }
 
   function sendView(timeMs) {
+    const k = skyOverscan(1 / camera.projectionMatrix.elements[5], look.rate, stats.latencyMs / 1000)
+    stats.overscan = Math.round(k * 100) / 100
     const [w, h] = size()
-    camera.updateMatrixWorld()
-    const viewMatrix = skyViewMatrix(camera, worldFromEq)
-    const projectionMatrix = skyProjection(camera)
+    const viewMatrix = skyViewMatrix(camera.matrixWorld, worldFromEq)
+    const projectionMatrix = skyProjection(camera.projectionMatrix, k)
     viewId += 1
     views.set(viewId, {
       vp: new THREE.Matrix4().fromArray(projectionMatrix).multiply(new THREE.Matrix4().fromArray(viewMatrix)),
@@ -312,31 +369,54 @@ export function makeCelestiarySky({ renderer, site, epochMs = Date.now(), search
     stats.lastTimeMs = timeMs
   }
 
-  /** Replays the frames that came into the sky target; the dome then looks through the last one's view. */
+  /**
+   * Replays the frames that came into the back target, then shows it: the
+   * dome looks through the last frame's view, and through the one before
+   * where the last doesn't reach.
+   */
   function drain(ids) {
+    const back = targets[1 - front]
     const prev = renderer.getRenderTarget()
-    renderer.setRenderTarget(target) // so its framebuffer exists for the replay
+    const t0 = performance.now()
+    renderer.setRenderTarget(back) // so its framebuffer exists for the replay
     renderer.resetState()
     net.receiver.drain()
     renderer.resetState()
+    const cpu = performance.now() - t0
+    if (perfOn) {
+      // The replay's GPU work too: a 1-pixel read waits for it (perf only: it stalls).
+      renderer.readRenderTargetPixels(back, 0, 0, 1, 1, new Uint8Array(4))
+      keep(perf.gpu, Math.round((performance.now() - t0) * 10) / 10)
+    }
+    keep(perf.drains, Math.round(cpu * 10) / 10)
     renderer.setRenderTarget(prev)
     const v = views.get(ids[ids.length - 1])
-    if (v) {
-      uniforms.skyVP.value.copy(v.vp)
-      stats.latencyMs = Math.round(performance.now() - v.sentAt)
-    }
+    if (!v) return
+    // The shown frame becomes the one before.
+    uniforms.skyVP2.value.copy(uniforms.skyVP.value)
+    uniforms.skyTex2.value = targets[front].texture
+    uniforms.skyOn2.value = uniforms.skyOn.value
+    front = 1 - front
+    uniforms.skyTex.value = targets[front].texture
+    uniforms.skyVP.value.copy(v.vp)
+    stats.latencyMs = Math.round(performance.now() - v.sentAt)
+    keep(perf.latency, stats.latencyMs)
   }
 
-  let daylight = 0
+  let daylight = 0, lastUpdate = 0
   function update(abodeTime) {
     const timeMs = epochMs + abodeTime * 1000
     daylight = THREE.MathUtils.smoothstep(sunAltitude(timeMs, site), -6, 6)
     eqToWorld(timeMs, site, worldFromEq)
     uniforms.skyEq.value.copy(worldFromEq).transpose()
+    const now = performance.now()
+    if (perfOn && lastUpdate && now - lastUpdate > 100) {
+      keep(perf.long, { at: Math.round(now - perf.since), ms: Math.round(now - lastUpdate), sunAlt: Math.round(sunAltitude(timeMs, site) * 10) / 10, turn: Math.round(look.rate * 100) / 100 }, 100)
+    }
+    lastUpdate = now
     if (!camera || failed) return
     if (!started) { start(); return }
     if (!net || stats.status === 'connecting' || !isSkyHello(stats.hello)) return
-    const now = performance.now()
     if (arrived.length) {
       const ids = arrived.splice(0)
       drain(ids)
@@ -351,6 +431,44 @@ export function makeCelestiarySky({ renderer, site, epochMs = Date.now(), search
     if (!inFlight && watched) sendView(timeMs)
   }
 
+  /** The cameras that drew the dome, by camera: where each looked last, for its turn rate. */
+  const looks = new WeakMap()
+  /** Take the camera as it drew the dome: a copy of its matrices, and how fast it turns. */
+  function seen(cam) {
+    const now = performance.now()
+    seenAt = now
+    if (!cam) return
+    camera = { matrixWorld: cam.matrixWorld.clone(), projectionMatrix: cam.projectionMatrix.clone() }
+    const dir = new THREE.Vector3(0, 0, -1).transformDirection(cam.matrixWorld)
+    const last = looks.get(cam)
+    if (last && now > last.at) {
+      const dt = (now - last.at) / 1000
+      const rate = dir.angleTo(last.dir) / dt
+      // Quick to rise, slow to fall: the next frame should cover the turn.
+      look.rate = Math.max(rate, look.rate * Math.exp(-dt / 0.4))
+    }
+    looks.set(cam, { dir, at: now })
+  }
+
+  // The guest's perf snapshot (?sky_perf=1), asked for and awaited.
+  let perfAsk = 0
+  const perfWaiting = new Map()
+  function guestPerf(timeoutMs = 4000) {
+    if (!net) return Promise.resolve(null)
+    const id = ++perfAsk
+    return new Promise((resolve) => {
+      perfWaiting.set(id, resolve)
+      net.receiver.post({ type: 'sky:perf-request', id })
+      setTimeout(() => { if (perfWaiting.delete(id)) resolve(null) }, timeoutMs)
+    })
+  }
+  const summary = (a) => {
+    if (!a.length) return null
+    const v = a.filter((x) => typeof x === 'number').slice().sort((x, y) => x - y)
+    const at = (q) => v[Math.min(v.length - 1, Math.floor(q * v.length))]
+    return { n: v.length, p50: at(0.5), p90: at(0.9), max: v[v.length - 1] }
+  }
+
   function dispose() {
     if (!net) return
     try { net.receiver.post({ type: 'layer:dispose' }) } catch { /* the frame may be gone */ }
@@ -361,9 +479,31 @@ export function makeCelestiarySky({ renderer, site, epochMs = Date.now(), search
   }
 
   return {
-    uniforms, stats, target,
+    uniforms, stats, targets,
     /** Call when the abode's dome is drawn, with the camera drawing it: the guest starts on the first. */
-    seen(cam) { seenAt = performance.now(); if (cam) camera = cam },
+    seen,
+    /** The abode's time as Unix ms. */
+    timeMs: (abodeTime) => epochMs + abodeTime * 1000,
+    /**
+     * What the sky costs (?sky_perf=1): here, the replay's CPU time (and with
+     * its GPU work, which a 1-pixel read waits for), the frames' latency,
+     * the frames longer than 100 ms; there, celestiary's own perf snapshot
+     * (its passes, by its perf tool) and its per-frame cost (layer:stats).
+     */
+    async perf() {
+      return {
+        when: new Date().toISOString(),
+        page: location.href,
+        userAgent: navigator.userAgent,
+        stats: { ...stats, hello: stats.hello?.adapter },
+        host: {
+          drainCpuMs: summary(perf.drains), drainWithGpuMs: summary(perf.gpu), latencyMs: summary(perf.latency),
+          longFrames: perf.long.slice(-40),
+        },
+        guestFrames: perf.guestStats ?? [],
+        guest: await guestPerf(),
+      }
+    },
     /** Each frame, before rendering, with the abode's clock (seconds). */
     update,
     /** Whether the guest's sky is showing. */
