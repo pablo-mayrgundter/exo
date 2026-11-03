@@ -27,8 +27,9 @@
 // A guest whose hello doesn't offer the 'sky' kind in 'equator-of-date' is
 // let go, and the procedural sky stays. So does a guest that doesn't load
 // or answer in time, or a missing WebGL2. Each logs one line. The guest's
-// page and origin are fixed here; only a page served from loopback may
-// point elsewhere (?sky_src=, loopback or celestiary.org only). ?sky=0
+// page and origin are fixed here. ?sky_src= may name another celestiary.org
+// page (its PR previews) from any page, or a loopback guest from a page
+// served from loopback (guest-src.js). ?sky=0
 // keeps the procedural sky without asking; ?sky_scale= sets the sky's
 // pixels per screen pixel (default 0.75), ?sky_meter=0 asks celestiary for
 // its cheaper exposure (no metering).
@@ -54,8 +55,8 @@ const NEAR = 1, FAR = 1e8
 export { isLocalOrigin }
 
 /**
- * The guest page to load. `?sky_src=` counts only on a loopback page (or a
- * dev server), and only for a loopback or built-in origin.
+ * The guest page to load. `?sky_src=` counts for a celestiary.org page from
+ * any page (a PR preview), and for a loopback guest on a loopback page.
  * @returns {{src: string, origin: string, rejected: string|null}}
  */
 export function resolveSkySrc({ param = null, pageOrigin, dev = false }) {
@@ -212,7 +213,7 @@ export function makeCelestiarySky({ renderer, site, epochMs = Date.now(), search
     const { src, origin, rejected } = resolveSkySrc({
       param: params.get('sky_src'), pageOrigin: location.origin, dev: !!import.meta.env?.DEV,
     })
-    if (rejected) console.warn(`[sky] ignoring sky_src=${rejected}: not a loopback page, or not an allowed origin`)
+    if (rejected) console.warn(`[sky] ignoring sky_src=${rejected}: not celestiary.org (a loopback guest needs a loopback page)`)
     let core
     try { core = await import('@pablo-mayrgundter/portal-netgl/core') } catch (e) { return fail(`portal-netgl didn't load (${e?.message ?? e})`) }
     if (failed) return

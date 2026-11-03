@@ -122,9 +122,12 @@ chat, and Pause / Next / Mute over the jukebox. `?touch` shows them on a
 desktop, `?touch=0` hides them. `?fx=0` turns off bloom, `?dpr=` sets the
 pixel ratio, `?enter` skips the intro, and `?debug` exposes `window.exo` for
 poking at the scene from the console.
-`?netmap=0` keeps the gate a plain ring (no NetMap guest); on a page served
-from localhost, `?netmap_src=<url>` points it at another `map.html`, such as
-a local netmap build (loopback or pablo-mayrgundter.github.io only).
+`?netmap=0` keeps the gate a plain ring (no NetMap guest).
+`?netmap_src=<url>` and `?sky_src=<url>` point the guests at other pages:
+netmap's or celestiary's PR previews from any page (exo's own preview
+included), so a change that spans exo and a guest is tried before either
+merges, e.g. `?sky_src=https://celestiary.org/web/pr-preview/pr-350/sky.html`;
+or a local build of either, from a page served from localhost.
 
 Pushes to `main` deploy to [exo.cafe](https://exo.cafe) from the `gh-pages`
 branch; each pull request gets a preview at

@@ -33,9 +33,10 @@
 // A guest that doesn't load, say hello (with the 'map' kind and the
 // 'globe-camera' view) or draw in time, or a missing WebGL2, logs one line
 // and the gate stays as it was: a ring and a link (E still jacks in). The
-// guest's page and origin are fixed here; only a page served from loopback
-// may point elsewhere (?netmap_src=, loopback or pablo-mayrgundter.github.io
-// only). ?netmap=0 keeps the plain gate without asking.
+// guest's page and origin are fixed here. ?netmap_src= may name another
+// pablo-mayrgundter.github.io page (netmap's PR previews) from any page, or
+// a loopback guest from a page served from loopback (guest-src.js).
+// ?netmap=0 keeps the plain gate without asking.
 import * as THREE from 'three'
 import { DIE_GEO } from '../cosmic/units.js'
 import { resolveGuestSrc } from './guest-src.js'
@@ -65,8 +66,8 @@ const RESEND_MS = 30_000
 export const DIE_MARK = { lon: DIE_GEO.lon, lat: DIE_GEO.lat, rgb: [245, 200, 66] }
 
 /**
- * The guest page to load. `?netmap_src=` counts only on a loopback page (or
- * a dev server), and only for a loopback or built-in origin.
+ * The guest page to load. `?netmap_src=` counts for a pablo-mayrgundter.github.io
+ * page from any page (a PR preview), and for a loopback guest on a loopback page.
  * @returns {{src: string, origin: string, rejected: string|null}}
  */
 export function resolveNetMapSrc({ param = null, pageOrigin, dev = false }) {
@@ -146,7 +147,7 @@ export function makeNetMapWindow({ renderer, search = globalThis.location?.searc
     const { src, origin, rejected } = resolveNetMapSrc({
       param: params.get('netmap_src'), pageOrigin: location.origin, dev: !!import.meta.env?.DEV,
     })
-    if (rejected) console.warn(`[netmap] ignoring netmap_src=${rejected}: not a loopback page, or not an allowed origin`)
+    if (rejected) console.warn(`[netmap] ignoring netmap_src=${rejected}: not pablo-mayrgundter.github.io (a loopback guest needs a loopback page)`)
     let core
     try { core = await import('@pablo-mayrgundter/portal-netgl/core') } catch (e) { return fail(`portal-netgl didn't load (${e?.message ?? e})`) }
     if (failed) return

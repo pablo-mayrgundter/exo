@@ -18,8 +18,12 @@ describe('the guest page', () => {
   it("is netmap's map.html by default", () => {
     expect(resolveNetMapSrc({ pageOrigin: prod })).toEqual({ src: NETMAP_MAP_SRC, origin: 'https://pablo-mayrgundter.github.io', rejected: null })
   })
-  it('ignores ?netmap_src= on a deployed page, whatever it names', () => {
-    for (const p of ['http://127.0.0.1:5481/map.html', 'https://pablo-mayrgundter.github.io/netmap/pr-preview/pr-25/map.html', 'https://evil.example/map.html']) {
+  it("takes netmap's PR previews on a deployed page, to try a change before it merges", () => {
+    const pr = 'https://pablo-mayrgundter.github.io/netmap/pr-preview/pr-25/map.html'
+    expect(resolveNetMapSrc({ param: pr, pageOrigin: prod })).toEqual({ src: pr, origin: 'https://pablo-mayrgundter.github.io', rejected: null })
+  })
+  it('ignores a loopback or other origin on a deployed page', () => {
+    for (const p of ['http://127.0.0.1:5481/map.html', 'https://localhost:5481/map.html', 'https://evil.example/map.html']) {
       const r = resolveNetMapSrc({ param: p, pageOrigin: prod })
       expect(r.src).toBe(NETMAP_MAP_SRC)
       expect(r.rejected).toBe(p)

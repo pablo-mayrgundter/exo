@@ -17,8 +17,13 @@ describe('the guest page', () => {
   it('is celestiary.org by default', () => {
     expect(resolveSkySrc({ pageOrigin: prod })).toEqual({ src: SKY_SRC, origin: 'https://celestiary.org', rejected: null })
   })
-  it('ignores ?sky_src= on a deployed page, whatever it names', () => {
-    for (const p of ['http://localhost:5481/', 'https://celestiary.org/web/pr-preview/pr-1/sky.html', 'https://evil.example/sky.html']) {
+  it("takes celestiary's PR previews on a deployed page, to try a change before it merges", () => {
+    const pr = 'https://celestiary.org/web/pr-preview/pr-350/sky.html'
+    expect(resolveSkySrc({ param: pr, pageOrigin: prod })).toEqual({ src: pr, origin: 'https://celestiary.org', rejected: null })
+    expect(resolveSkySrc({ param: pr, pageOrigin: 'https://exo.cafe' }).src).toBe(pr)
+  })
+  it('ignores a loopback or other origin on a deployed page', () => {
+    for (const p of ['http://localhost:5481/', 'https://127.0.0.1:5481/', 'https://evil.example/sky.html', 'https://celestiary.org.evil.example/sky.html']) {
       const r = resolveSkySrc({ param: p, pageOrigin: prod })
       expect(r.src).toBe(SKY_SRC)
       expect(r.rejected).toBe(p)
