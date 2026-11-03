@@ -118,7 +118,9 @@ would otherwise rediscover.
   `?enter&debug&sky_src=http://127.0.0.1:5482/sky.html&sky_scale=0.5`.
   Walk through the arch by holding forward (`exo.controls.input = () =>
   ({x: 0, f: 1})` from just inside it; setting the position is no
-  crossing). `exo.abode.sky.stats` has `status` ('sky' once a frame is
+  crossing). `exo.side` is where the avatar is, `exo.viewSide` where the
+  camera is (the scene drawn); in third person they part for a moment
+  each crossing. `exo.abode.sky.stats` has `status` ('sky' once a frame is
   in), `frames`, `latencyMs`; the abode's clock starts at `Date.now()`,
   so shift `Date.now` in an init script to see day or dusk. Its first
   frame takes 10–30 s on SwiftShader (the whole app boots).

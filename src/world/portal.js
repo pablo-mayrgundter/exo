@@ -9,6 +9,9 @@
 import * as THREE from 'three'
 
 const FLIP = new THREE.Matrix4().makeRotationY(Math.PI)
+/** The doorway's depth, metres: none to speak of, and this much with the camera this close. */
+const FLAT = 1e-4
+const NEAR_DOOR = 0.15
 
 export class PortalPair {
   /**
@@ -27,6 +30,9 @@ export class PortalPair {
     for (const s of this.sides) {
       const mat = new THREE.ShaderMaterial({
         uniforms: { map: { value: this.target.texture }, res: { value: new THREE.Vector2(1, 1) }, time: { value: 0 } },
+        // Its picture is looked up by screen position, so any face of it
+        // shows the right one: the box behind the plane (below) too.
+        side: THREE.DoubleSide,
         vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
         fragmentShader: `uniform sampler2D map; uniform vec2 res; uniform float time; varying vec2 vUv;
           void main(){
@@ -37,7 +43,14 @@ export class PortalPair {
             gl_FragColor = vec4(c + vec3(0.42, 0.92, 0.95) * rim, 1.0);
           }`,
       })
-      s.surface = new THREE.Mesh(new THREE.PlaneGeometry(width, height), mat)
+      // A box behind the doorway's plane, flat (scale.z) until the camera
+      // comes within its near plane's reach of the door: then the front face
+      // is clipped, and the back one, a little way behind, still shows the
+      // other side (render).
+      const box = new THREE.BoxGeometry(width, height, 1)
+      box.translate(0, 0, -0.5)
+      s.surface = new THREE.Mesh(box, mat)
+      s.surface.scale.z = FLAT
       s.surface.name = 'portal-surface'
       s.anchor.add(s.surface)
     }
@@ -62,6 +75,11 @@ export class PortalPair {
     const toCam = camera.getWorldPosition(new THREE.Vector3()).sub(here.anchor.getWorldPosition(new THREE.Vector3()))
     const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(here.anchor.getWorldQuaternion(new THREE.Quaternion()))
     if (toCam.dot(normal) <= 0) return
+    // Close to the door (in its own units: metres), the surface gets depth.
+    here.anchor.updateWorldMatrix(true, false)
+    const local = camera.getWorldPosition(new THREE.Vector3()).applyMatrix4(here.anchor.matrixWorld.clone().invert())
+    const close = local.z < NEAR_DOOR && Math.abs(local.x) < this.width / 2 + NEAR_DOOR && Math.abs(local.y) < this.height / 2 + NEAR_DOOR
+    here.surface.scale.z = close ? NEAR_DOOR : FLAT
 
     camera.updateMatrixWorld()
     const v = this.virtual

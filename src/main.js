@@ -110,7 +110,8 @@ const portal = new PortalPair(
 const scenes = [world, abode.scene]
 // From the bar, the abode's sky drawn in place in the doorway's target, under the abode.
 portal.underlay = (i, target) => i === 1 && !!abode.sky?.drawInto(target)
-let side = 0 // 0: the world (bar and street), 1: the abode
+let side = 0 // 0: the world (bar and street), 1: the abode: where the avatar is
+let viewSide = 0 // where the camera is: the side whose scene is drawn, the other seen through the arch
 
 // --- Post: bloom, the Tron glow ---
 const composer = new EffectComposer(renderer)
@@ -121,7 +122,7 @@ composer.addPass({
   enabled: true, needsSwap: false, renderToScreen: false,
   setSize() {}, dispose() {},
   render(r, _write, read) {
-    const under = side === 1 && !!abode.sky?.drawInto(read)
+    const under = viewSide === 1 && !!abode.sky?.drawInto(read)
     if (under) r.clear(false, true, true)
     renderPass.clear = !under
   },
@@ -804,7 +805,7 @@ const ray = new THREE.Raycaster()
 // meant for the terminal's lower rows. Pick them at about a centimetre.
 ray.params.Line.threshold = 0.01 * BODY_UM
 controls.onClick = (e) => {
-  if (side !== 0 || !entered) return
+  if (side !== 0 || viewSide !== 0 || !entered) return
   const ndc = new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1)
   ray.setFromCamera(ndc, camera)
   // Your stool's terminal: a tap on a menu row orders it. Your glass: a sip.
@@ -841,7 +842,7 @@ controls.onClick = (e) => {
 }
 
 // A handle for tests and the console: ?debug
-if (params.has('debug')) window.exo = { get clock() { return clock }, p2p, voice, maxVoice, terminals, setView, barLife, sitDown, standUp, others, mist, vcpu, worker, car, life, show, mind, face, give, avatar, controls, bar, floor, abode, portal, gate, camera, renderer, ledger, presence, chipFrame, cafe, get side() { return side }, get tick() { return tick } }
+if (params.has('debug')) window.exo = { get clock() { return clock }, p2p, voice, maxVoice, terminals, setView, barLife, sitDown, standUp, others, mist, vcpu, worker, car, life, show, mind, face, give, avatar, controls, bar, floor, abode, portal, gate, camera, renderer, ledger, presence, chipFrame, cafe, get side() { return side }, get viewSide() { return viewSide }, get tick() { return tick } }
 if (window.exo) window.exo.jukebox = jukebox
 
 // --- Loop ---
@@ -1121,8 +1122,23 @@ function frame() {
       camera.lookAt(target.multiplyScalar(unit))
     }
   }
-  camera.near = (fpv ? 0.02 : 0.05) * unit
-  camera.far = Math.max(600, controls.dist * 4) * unit
+  // The camera crosses the arch as the avatar does: if the line from the
+  // head to it passes through the doorway, it's carried through the link,
+  // and its side's scene is the one drawn (draw). So the view changes
+  // scene only when the camera goes through, not when the avatar's feet do.
+  viewSide = side
+  camera.updateMatrixWorld()
+  const head = fpv ? avatar.parts.head.pivot.localToWorld(new THREE.Vector3(0, 0.22, 0)) : pos.clone().add(new THREE.Vector3(0, seatedNow ? 1.2 : 1.5, 0)).multiplyScalar(unit)
+  const camLink = portal.crossing(side, head, camera.position)
+  if (camLink) {
+    camLink.multiply(camera.matrixWorld).decompose(camera.position, camera.quaternion, new THREE.Vector3())
+    viewSide = 1 - side
+  }
+  // Looking from the bar at the avatar in the abode, you're inside the bar.
+  if (viewSide === 0 && side === 1) bar.exterior.visible = false
+  const viewUnit = unitOf(viewSide)
+  camera.near = (fpv ? 0.02 : 0.05) * viewUnit
+  camera.far = Math.max(600, controls.dist * 4) * viewUnit
   camera.updateProjectionMatrix()
   if (touch) touchHud(button, freshPrompt)
   world.fog.density = (controls.dist > 60 ? 0.00008 : 0.0009) / BODY_UM
@@ -1131,16 +1147,50 @@ function frame() {
   // it (the portal's virtual camera from the bar side), and hold the frame.
   if (abode.sky?.syncing()) {
     camera.updateMatrixWorld()
-    const view = side === 1 ? { matrixWorld: camera.matrixWorld, projectionMatrix: camera.projectionMatrix } : portal.viewFrom(camera, side)
+    const view = viewSide === 1 ? { matrixWorld: camera.matrixWorld, projectionMatrix: camera.projectionMatrix } : portal.viewFrom(camera, viewSide)
     held = { id: abode.sky.request(view.matrixWorld, view.projectionMatrix, abodeFrame.time), at: performance.now(), dt, now }
     return
   }
   draw(dt, now)
 }
 
+// The camera's side is drawn, the other through the arch. An avatar
+// straddling the doorway is drawn on both sides: its own scene has it, and
+// a ghost carried through the link stands in the other for that render. The
+// door's surface hides whatever of either lies behind its plane, so they
+// meet at the door.
 function draw(dt, now) {
-  portal.render(renderer, camera, side, now)
-  composer.render(dt)
+  const straddling = straddles()
+  withGhost(straddling && viewSide === side, () => portal.render(renderer, camera, viewSide, now))
+  renderPass.scene = scenes[viewSide]
+  withGhost(straddling && viewSide !== side, () => composer.render(dt))
+}
+
+/** Whether the avatar is within reach of its side's doorway: some of it may be through. */
+function straddles() {
+  const anchor = side === 0 ? bar.portalAnchor : abode.portalAnchor
+  anchor.updateWorldMatrix(true, false)
+  const p = avatar.group.getWorldPosition(new THREE.Vector3()).applyMatrix4(anchor.matrixWorld.clone().invert())
+  return Math.abs(p.z) < 0.7 && Math.abs(p.x) < portal.width / 2 + 0.5
+}
+
+/** Runs fn with the avatar moved, as a ghost through the link, into the other side's scene. */
+function withGhost(on, fn) {
+  if (!on) return fn()
+  const g = avatar.group, home = g.parent, there = scenes[1 - side]
+  g.updateMatrixWorld(true)
+  there.updateMatrixWorld()
+  const m = there.matrixWorld.clone().invert().multiply(portal.link(side)).multiply(g.matrixWorld)
+  there.add(g)
+  g.matrixAutoUpdate = false
+  g.matrix.copy(m)
+  g.matrixWorldNeedsUpdate = true
+  try { fn() } finally {
+    home.add(g)
+    g.matrixAutoUpdate = true
+    g.updateMatrix()
+    g.updateMatrixWorld(true)
+  }
 }
 
 function hud() {
