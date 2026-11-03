@@ -1,19 +1,32 @@
 // Pablo's abode: another place in cyberspace, reached through the arch in
 // the bar's west wall. A temple pavilion with a glowing tree of life on its
 // gable, a tree of cyan spirals inlaid in the plaza, candles along spiral
-// paths, and a dusk sky: celestiary's stars when its guest can draw them
-// (celestiary-sky.js), else procedural ones. Its clock runs 600 times as
-// fast as the bar's, so the stars wheel round about every two and a half
-// minutes.
+// paths, and celestiary's sky over it (celestiary-sky.js): its day, its
+// sunsets and its stars, from the abode's place on Earth; a dusk dome with
+// procedural stars until it comes, or if it can't. Its clock runs 600
+// times as fast as the bar's: a day in two and a half minutes.
 //
 // Abode space: metres, the plaza's centre at the origin, the temple to -z,
 // the arch back to the bar at +z facing the temple.
 import * as THREE from 'three'
 import { C } from '../theme.js'
 import { rng, neonTexture, FONT_MONO } from './textures.js'
-import { makeCelestiarySky, SKY_GLSL } from './celestiary-sky.js'
+import { makeCelestiarySky, sunAltitude } from './celestiary-sky.js'
+import { BAR } from './bar.js'
 
 export const ABODE_RATE = 600
+/** Through twilight, under celestiary's sky, it slows to this: dawn and dusk last, and the meter keeps up. */
+export const ABODE_TWILIGHT_RATE = 60
+
+/**
+ * The abode's clock rate for the Sun's altitude: ×600, easing to ×60
+ * between 15° below the horizon and 3° above it (6° ramps each side), so a
+ * day is still a few minutes and a sunset most of one.
+ */
+export function abodeRate(sunAlt) {
+  const slow = THREE.MathUtils.smoothstep(sunAlt, -21, -15) * (1 - THREE.MathUtils.smoothstep(sunAlt, 3, 9))
+  return ABODE_RATE + (ABODE_TWILIGHT_RATE - ABODE_RATE) * slow
+}
 /**
  * Where the abode's sky is seen from: the latitude the procedural sky's
  * pole was tilted for (0.6 rad from the zenith), on the prime meridian.
@@ -26,24 +39,20 @@ const basic = (o) => new THREE.MeshBasicMaterial({ toneMapped: false, ...o })
 export function makeAbode({ renderer } = {}) {
   const scene = new THREE.Scene()
   scene.name = 'abode'
-  scene.background = new THREE.Color(0x0b0a2a)
+  const background = new THREE.Color(0x0b0a2a)
+  scene.background = background
   scene.fog = new THREE.Fog(0x1a1240, 60, 220)
   const colliders = []
   const r = rng(1009)
 
-  // Sky: a dusk gradient dome, over celestiary's sky when it comes
-  // (celestiary-sky.js), else over procedural stars on a sphere that turns
-  // with the abode's clock.
+  // Sky: celestiary's, drawn in place under the abode (celestiary-sky.js
+  // drawInto) once it comes; until then, or if it can't, a dusk gradient
+  // dome over procedural stars on a sphere that turns with the abode's clock.
   const celestiary = renderer ? makeCelestiarySky({ renderer, site: ABODE_SITE }) : null
   const sky = new THREE.Mesh(new THREE.SphereGeometry(400, 32, 16), new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false, fog: false,
-    uniforms: celestiary ? celestiary.uniforms : {},
-    defines: celestiary ? { CELESTIARY: 1 } : {},
     vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
     fragmentShader: `varying vec3 vP;
-      #ifdef CELESTIARY
-      ${SKY_GLSL}
-      #endif
       void main(){
         float h = vP.y;
         // Linear colours: dusk orange at the horizon, violet, then night.
@@ -51,18 +60,13 @@ export function makeAbode({ renderer } = {}) {
         vec3 mid = vec3(0.09, 0.03, 0.14);
         vec3 top = vec3(0.004, 0.006, 0.03);
         vec3 c = h < 0.12 ? mix(horizon, mid, smoothstep(-0.02, 0.12, h)) : mix(mid, top, smoothstep(0.12, 0.6, h));
-        #ifdef CELESTIARY
-        if (skyOn > 0.5) {
-          // celestiary's sky over the dusk, thinning into the horizon's haze.
-          vec4 s = skySample(normalize(vP)) * smoothstep(-0.02, 0.15, h);
-          c = c * (1.0 - s.a) + s.rgb;
-        }
-        #endif
         gl_FragColor = vec4(c, 1.0);
       }`,
   }))
-  // The guest starts when the abode is first drawn, from either side.
-  if (celestiary) sky.onBeforeRender = () => celestiary.seen()
+  // The guest starts when the abode is first drawn, from either side, and
+  // draws for the camera that drew it last. Under celestiary's sky the dome
+  // still draws, colour off, to say the abode is in view.
+  if (celestiary) sky.onBeforeRender = (_r, _s, camera) => celestiary.seen(camera)
   scene.add(sky)
   const starPos = []
   for (let i = 0; i < 2500; i++) {
@@ -208,9 +212,11 @@ export function makeAbode({ renderer } = {}) {
   gable.position.set(0, 7.2 + 3.1, 7.05)
   temple.add(gable)
 
-  // The arch back to the bar.
+  // The arch back to the bar. Its foot is as far below the ground as the
+  // bar's floor stands over its own arch's (BAR.floor), so the two doorways
+  // line up floor to floor and a crossing keeps your height.
   const arch = new THREE.Group()
-  arch.position.set(0, 0, 16)
+  arch.position.set(0, -BAR.floor, 16)
   scene.add(arch)
   const archLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints([
     new THREE.Vector3(-1.2, 0, 0), new THREE.Vector3(-1.2, 3.2, 0), new THREE.Vector3(1.2, 3.2, 0), new THREE.Vector3(1.2, 0, 0)]),
@@ -222,7 +228,7 @@ export function makeAbode({ renderer } = {}) {
   archSign.rotation.y = Math.PI
   arch.add(archSign)
   const portalAnchor = new THREE.Object3D()
-  portalAnchor.position.set(0, 1.6, 16)
+  portalAnchor.position.set(0, BAR.archH / 2 - BAR.floor, 16)
   portalAnchor.rotation.y = Math.PI // its +z faces the temple
   scene.add(portalAnchor)
   // No collider at the arch: it would stop you walking back through it.
@@ -232,6 +238,10 @@ export function makeAbode({ renderer } = {}) {
     scene, colliders, portalAnchor,
     /** celestiary's sky (null without a renderer): its `stats`, `on`. */
     sky: celestiary,
+    /** 0 at night to 1 by day under celestiary's sky; 0 under the procedural dusk. */
+    get daylight() { return celestiary?.daylight ?? 0 },
+    /** The clock's rate at abode time `t`: slowed through twilight under celestiary's sky (abodeRate). */
+    rate(t) { return celestiary?.on ? abodeRate(sunAltitude(celestiary.timeMs(t), ABODE_SITE)) : ABODE_RATE },
     spawn: new THREE.Vector3(0, 0, 13),
     /** @param {number} abodeTime seconds on the abode's clock */
     update(abodeTime, wallTime) {
@@ -240,6 +250,11 @@ export function makeAbode({ renderer } = {}) {
       if (celestiary) {
         celestiary.update(abodeTime)
         pole.visible = !celestiary.on
+        // celestiary's sky is under the abode already (drawInto): the dome
+        // draws nothing, and there's no background colour, which three
+        // would clear the frame to.
+        sky.material.colorWrite = !celestiary.on
+        scene.background = celestiary.on ? null : background
       }
       candleMat.uniforms.t.value = wallTime
     },

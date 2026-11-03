@@ -97,6 +97,50 @@ would otherwise rediscover.
   in Node to listen, and to check a received stream is the 8-bit one, see
   whether its pitch lands on semitones (opus smears the 7-bit grid, not
   the pitch). `exo.voice` has `speakers`, `levelFor(id)`, `streamFor(id)`.
+- **NetGL guests in tests (the gate's NetMap, the abode's sky).** The
+  real guests are on hosts the sandbox can't reach. For the gate, build
+  netmap (`web/`: `python -m netmap build --topology synthetic` for data,
+  ~2 min, then `npm run build`) and serve `dist` on another loopback port
+  with `python3 -m http.server <port> --directory …/web/dist` (by path: it
+  survives rebuilds, unlike a server started inside `dist`); open
+  `?enter&debug&fresh&netmap_src=http://127.0.0.1:<port>/map.html`. For a
+  quick check without netmap, `test/fixtures/map-guest` speaks the same
+  protocol (`npx vite test/fixtures/map-guest --host 127.0.0.1 --port …`).
+  Other sessions on the machine may hold ports (5482 was); pick free ones.
+  `exo.gate.netmap.stats` has `status` ('live' once a frame is in),
+  `views`, `frames`, `costMs`; `exo.gate.netmap.target` is the render
+  target (`renderer.readRenderTargetPixels` it for the window alone).
+  Stand in front of the gate in first person: `exo.setView('first')`,
+  avatar at `(9 − 0.479·7, 0, 22 + 0.878·7)`, `controls.yaw = −0.5`.
+  For the sky, build celestiary (celestiary/web: `CESIUM_ION_TOKEN= yarn
+  build`) and run its `yarn sky-host`, which serves `docs/` on
+  127.0.0.1:5482 (and its own check host on localhost:5483); open
+  `?enter&debug&sky_src=http://127.0.0.1:5482/sky.html&sky_scale=0.5`.
+  Walk through the arch by holding forward (`exo.controls.input = () =>
+  ({x: 0, f: 1})` from just inside it; setting the position is no
+  crossing). `exo.side` is where the avatar is, `exo.viewSide` where the
+  camera is (the scene drawn); in third person they part for a moment
+  each crossing. `exo.abode.sky.stats` has `status` ('sky' once a frame is
+  in), `frames`, `latencyMs`; the abode's clock starts at `Date.now()`,
+  so shift `Date.now` in an init script to see day or dusk. Its first
+  frame takes 10–30 s on SwiftShader (the whole app boots).
+- **Finding a guest's frame in Playwright:** match the frame by its URL's
+  start (`fr.url().startsWith('http://127.0.0.1:5482')`): the host's own
+  URL carries the guest's in `?sky_src=`, so `includes` finds the host,
+  and `frame.evaluate` then runs in the parent (it looked like a Playwright
+  bug for a while).
+- **deck.gl under SwiftShader is very slow.** NetMap's globe took ~20 s
+  a frame at 512² on a busy 4-core sandbox (in netmap's own page too), and it's paid inside one of
+  exo's frames, so the window paces itself to a frame every minute or two
+  there; `page.screenshot` times out while one lands. Read the canvas back
+  instead, right after the app's render in the same animation frame:
+  `requestAnimationFrame(() => canvas.toDataURL())`.
+- **A frame held for the sky draws nothing.** In sync the loop returns
+  early while it waits for celestiary's frame (up to 250 ms), so a canvas
+  read in such an animation frame is empty (white in a PNG viewer), and on
+  SwiftShader most are. Read it inside the draw: wrap `exo.renderer.render`
+  and call `toDataURL()` after the render whose target is null (the output
+  pass).
 - **Element ids are global.** The canvas is `#view` (and styled full
   screen); a control named the same quietly becomes the canvas. Check
   `index.html` before naming a new element.

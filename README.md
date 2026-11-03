@@ -79,12 +79,32 @@ by the community that gathers at [exo.cafe](https://exo.cafe).
   up, peace, OK, fists) as light skeletons. Video never leaves your
   machine.
 - **Pablo's abode** is through the arch, at human scale: the portal
-  carries a real 224,000× magnification. Its sky is ready to come from
-  [celestiary](https://celestiary.org) through NetGL once celestiary's
-  layer page has a sky mode; until then it's procedural.
+  carries a real 224,000× magnification. Its sky is
+  [celestiary](https://celestiary.org)'s own, through NetGL:
+  - celestiary runs whole, landed at the abode's place on Earth (its
+    `sky.html`);
+  - it draws your camera's view each frame, with its day, sunsets, air,
+    clouds and stars, at the abode's ×600 time;
+  - until it's in, or if it can't be, the dusk is procedural;
+  - Each frame waits for the sky drawn for its own camera (a sync render,
+    as the portals are), at a pixel per CSS pixel as celestiary's own page
+    draws; `?sky_scale=2` is a retina screen's own pixels.
+  - It's drawn in place: celestiary's own final pass (its air, its tone
+    map, its eye) replays straight into the frame the abode is drawn into,
+    inside the abode or through the arch from the bar, and the abode goes
+    over it. There's no stand-in: until it's in, or if it can't be, the
+    dusk is exo's own.
+  - `?sky=0` skips it; `?sky_meter=0` asks for its cheaper exposure.
+  - Its clock slows from ×600 to ×60 through twilight, so dawn and dusk
+    last and celestiary's eye keeps up.
+  - `?sky_perf=1` measures it: `await exo.abode.sky.perf()` (with
+    `?debug`) returns celestiary's perf snapshot and exo's replay times,
+    to paste.
 - **Out the door, the Grid.** A gate on the street jacks you into
   [NetMap](https://pablo-mayrgundter.github.io/netmap/), maps of the
-  internet you can travel.
+  internet you can travel. The gate is a window onto it, live: NetMap's
+  globe, drawn by NetMap itself (its `map.html`) and replayed into the
+  street through NetGL, turning slowly over 0° N 0° E, where the die sits.
 
 | The street, from 100 m | The die, from orbit | Pablo's abode |
 |---|---|---|
@@ -114,6 +134,12 @@ chat, and Pause / Next / Mute over the jukebox. `?touch` shows them on a
 desktop, `?touch=0` hides them. `?fx=0` turns off bloom, `?dpr=` sets the
 pixel ratio, `?enter` skips the intro, and `?debug` exposes `window.exo` for
 poking at the scene from the console.
+`?netmap=0` keeps the gate a plain ring (no NetMap guest).
+`?netmap_src=<url>` and `?sky_src=<url>` point the guests at other pages:
+netmap's or celestiary's PR previews from any page (exo's own preview
+included), so a change that spans exo and a guest is tried before either
+merges, e.g. `?sky_src=https://celestiary.org/web/pr-preview/pr-350/sky.html`;
+or a local build of either, from a page served from localhost.
 
 Pushes to `main` deploy to [exo.cafe](https://exo.cafe) from the `gh-pages`
 branch; each pull request gets a preview at

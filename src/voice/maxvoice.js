@@ -158,6 +158,9 @@ export function makeMaxVoice({ voice, onStatus = () => {} }) {
     /** Max says a line. `aside`: thinking aloud, first to go when he's behind. */
     say(text, { aside = false } = {}) {
       if (mode === 'quiet' || !text) return
+      // Before the visitor's first click or key the browser won't start
+      // audio (and warns for each try): his lines are subtitles until then.
+      if (globalThis.navigator?.userActivation && !navigator.userActivation.hasBeenActive) return
       if (queue.length >= 2) {
         // Behind: drop thinking aloud, then the oldest.
         const i = queue.findIndex((q) => q.aside)

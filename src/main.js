@@ -13,10 +13,12 @@ import { job as maxJob, ZP as MAX_ZP } from './chip/max.js'
 import { buildVcpu } from './chip/vcpu.js'
 import { makeChipFloor } from './world/chipfloor.js'
 import { BODY_UM, BODY_PER_LAYOUT, CHIP_UNIT_UM, DIE_GEO, formatLength } from './cosmic/units.js'
-import { makeBar } from './world/bar.js'
+import { makeBar, BAR } from './world/bar.js'
 import { makeAbode, ABODE_RATE } from './world/abode.js'
+import { SKY_HOLD_MS } from './world/celestiary-sky.js'
 import { PortalPair } from './world/portal.js'
-import { neonTexture, FONT_MONO } from './world/textures.js'
+import { makeGate } from './world/gate.js'
+import { makeNetMapWindow } from './world/netmap-window.js'
 import { Avatar, TIERS, SIP } from './avatar/avatar.js'
 import { FaceTracker } from './avatar/face.js'
 import { Ledger, allocation } from './mist/ledger.js'
@@ -74,7 +76,9 @@ const chipFrame = new Frame('6502', {
   origin: [-NMI_PAD[0] * BODY_PER_LAYOUT, 0, NMI_PAD[1] * BODY_PER_LAYOUT],
   rate: () => chipHz / 2 / 1e6, // chip seconds per bar second, against its native 1 MHz
 })
-const abodeFrame = new Frame('Abode', { parent: wall, rate: ABODE_RATE })
+// ×600, slowed through twilight under celestiary's sky (abode.rate; set once the abode is built).
+let abodeRateAt = () => ABODE_RATE
+const abodeFrame = new Frame('Abode', { parent: wall, rate: () => abodeRateAt(abodeFrame.time) })
 
 // --- Scenes ---
 const world = new THREE.Scene()
@@ -94,21 +98,38 @@ world.add(bar.group)
 const jukebox = makeJukebox({ position: [-7.9, -6.2], rotation: 0.35, note, touch }) // the north-west corner, by the back bar
 bar.group.add(jukebox.group)
 bar.colliders.push(jukebox.collider)
-const gate = makeGate()
+// The gate to NetMap, with a live window onto it (netmap-window.js).
+const gate = makeGate({ netmap: makeNetMapWindow({ renderer }) })
 world.add(gate.group)
 const abode = makeAbode({ renderer })
+abodeRateAt = (t) => abode.rate(t)
 const portal = new PortalPair(
   { scene: world, anchor: bar.portalAnchor },
   { scene: abode.scene, anchor: abode.portalAnchor },
   { width: 2.4, height: 3.2 })
 const scenes = [world, abode.scene]
-let side = 0 // 0: the world (bar and street), 1: the abode
+// From the bar, the abode's sky drawn in place in the doorway's target, under the abode.
+portal.underlay = (i, target) => i === 1 && !!abode.sky?.drawInto(target)
+let side = 0 // 0: the world (bar and street), 1: the abode: where the avatar is
+let viewSide = 0 // where the camera is: the side whose scene is drawn, the other seen through the arch
 
 // --- Post: bloom, the Tron glow ---
 const composer = new EffectComposer(renderer)
 const renderPass = new RenderPass(world, camera)
+// In the abode, celestiary's sky drawn in place first (celestiary-sky.js
+// drawInto), and the abode over it, its depth cleared, no colour clear.
+composer.addPass({
+  enabled: true, needsSwap: false, renderToScreen: false,
+  setSize() {}, dispose() {},
+  render(r, _write, read) {
+    const under = viewSide === 1 && !!abode.sky?.drawInto(read)
+    if (under) r.clear(false, true, true)
+    renderPass.clear = !under
+  },
+})
 composer.addPass(renderPass)
-const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.75, 0.55, 0.22)
+const BLOOM_THRESHOLD = 0.22
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.75, 0.55, BLOOM_THRESHOLD)
 if (touch) {
   // On phones the glow renders at CSS pixels, as on a 1× desktop, rather
   // than at the screen's: a third to a quarter of the fill, and it's soft anyway.
@@ -784,7 +805,7 @@ const ray = new THREE.Raycaster()
 // meant for the terminal's lower rows. Pick them at about a centimetre.
 ray.params.Line.threshold = 0.01 * BODY_UM
 controls.onClick = (e) => {
-  if (side !== 0 || !entered) return
+  if (side !== 0 || viewSide !== 0 || !entered) return
   const ndc = new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1)
   ray.setFromCamera(ndc, camera)
   // Your stool's terminal: a tap on a menu row orders it. Your glass: a sip.
@@ -821,7 +842,7 @@ controls.onClick = (e) => {
 }
 
 // A handle for tests and the console: ?debug
-if (params.has('debug')) window.exo = { get clock() { return clock }, p2p, voice, maxVoice, terminals, setView, barLife, sitDown, standUp, others, mist, vcpu, worker, car, life, show, mind, face, give, avatar, controls, bar, floor, abode, portal, camera, renderer, ledger, presence, chipFrame, cafe, get side() { return side }, get tick() { return tick } }
+if (params.has('debug')) window.exo = { get clock() { return clock }, p2p, voice, maxVoice, terminals, setView, barLife, sitDown, standUp, others, mist, vcpu, worker, car, life, show, mind, face, give, avatar, controls, bar, floor, abode, portal, gate, camera, renderer, ledger, presence, chipFrame, cafe, get side() { return side }, get viewSide() { return viewSide }, get tick() { return tick } }
 if (window.exo) window.exo.jukebox = jukebox
 
 // --- Loop ---
@@ -856,9 +877,16 @@ addEventListener('resize', () => {
 // What being here costs the main thread, as a share of a core: the work
 // of each frame over the time between frames.
 let busy = 0, span = 0
+// A frame held for the sky (celestiary-sky.js, sync): drawn once the sky
+// for its camera is in, or after SKY_HOLD_MS with the last one.
+let held = null
 renderer.setAnimationLoop(() => {
   const t0 = performance.now()
-  frame()
+  if (held) {
+    if (!abode.sky.ready(held.id) && t0 - held.at < SKY_HOLD_MS) return
+    draw(held.dt, held.now)
+    held = null
+  } else frame()
   busy += performance.now() - t0
 })
 let lastFrameAt = performance.now()
@@ -931,7 +959,7 @@ function frame() {
     controls.yaw += new THREE.Euler().setFromQuaternion(q, 'YXZ').y
     side = 1 - side
     pos.divideScalar(unitOf(side))
-    pos.y = side === 0 ? 0.08 : 0
+    pos.y = side === 0 ? BAR.floor : 0 // the doorways line up floor to floor (abode.js)
     scenes[side].add(avatar.group)
     renderPass.scene = scenes[side]
     note(side === 1 ? `Pablo's abode: time runs ${formatRate(abodeFrame.absoluteRate)}.` : 'Back in Exo Cafe.')
@@ -1094,14 +1122,75 @@ function frame() {
       camera.lookAt(target.multiplyScalar(unit))
     }
   }
-  camera.near = (fpv ? 0.02 : 0.05) * unit
-  camera.far = Math.max(600, controls.dist * 4) * unit
+  // The camera crosses the arch as the avatar does: if the line from the
+  // head to it passes through the doorway, it's carried through the link,
+  // and its side's scene is the one drawn (draw). So the view changes
+  // scene only when the camera goes through, not when the avatar's feet do.
+  viewSide = side
+  camera.updateMatrixWorld()
+  const head = fpv ? avatar.parts.head.pivot.localToWorld(new THREE.Vector3(0, 0.22, 0)) : pos.clone().add(new THREE.Vector3(0, seatedNow ? 1.2 : 1.5, 0)).multiplyScalar(unit)
+  const camLink = portal.crossing(side, head, camera.position)
+  if (camLink) {
+    camLink.multiply(camera.matrixWorld).decompose(camera.position, camera.quaternion, new THREE.Vector3())
+    viewSide = 1 - side
+  }
+  // Looking from the bar at the avatar in the abode, you're inside the bar.
+  if (viewSide === 0 && side === 1) bar.exterior.visible = false
+  const viewUnit = unitOf(viewSide)
+  camera.near = (fpv ? 0.02 : 0.05) * viewUnit
+  camera.far = Math.max(600, controls.dist * 4) * viewUnit
   camera.updateProjectionMatrix()
   if (touch) touchHud(button, freshPrompt)
   world.fog.density = (controls.dist > 60 ? 0.00008 : 0.0009) / BODY_UM
 
-  portal.render(renderer, camera, side, now)
-  composer.render(dt)
+  // In sync, the abode's sky is drawn for this very camera first: ask for
+  // it (the portal's virtual camera from the bar side), and hold the frame.
+  if (abode.sky?.syncing()) {
+    camera.updateMatrixWorld()
+    const view = viewSide === 1 ? { matrixWorld: camera.matrixWorld, projectionMatrix: camera.projectionMatrix } : portal.viewFrom(camera, viewSide)
+    held = { id: abode.sky.request(view.matrixWorld, view.projectionMatrix, abodeFrame.time), at: performance.now(), dt, now }
+    return
+  }
+  draw(dt, now)
+}
+
+// The camera's side is drawn, the other through the arch. An avatar
+// straddling the doorway is drawn on both sides: its own scene has it, and
+// a ghost carried through the link stands in the other for that render. The
+// door's surface hides whatever of either lies behind its plane, so they
+// meet at the door.
+function draw(dt, now) {
+  const straddling = straddles()
+  withGhost(straddling && viewSide === side, () => portal.render(renderer, camera, viewSide, now))
+  renderPass.scene = scenes[viewSide]
+  withGhost(straddling && viewSide !== side, () => composer.render(dt))
+}
+
+/** Whether the avatar is within reach of its side's doorway: some of it may be through. */
+function straddles() {
+  const anchor = side === 0 ? bar.portalAnchor : abode.portalAnchor
+  anchor.updateWorldMatrix(true, false)
+  const p = avatar.group.getWorldPosition(new THREE.Vector3()).applyMatrix4(anchor.matrixWorld.clone().invert())
+  return Math.abs(p.z) < 0.7 && Math.abs(p.x) < portal.width / 2 + 0.5
+}
+
+/** Runs fn with the avatar moved, as a ghost through the link, into the other side's scene. */
+function withGhost(on, fn) {
+  if (!on) return fn()
+  const g = avatar.group, home = g.parent, there = scenes[1 - side]
+  g.updateMatrixWorld(true)
+  there.updateMatrixWorld()
+  const m = there.matrixWorld.clone().invert().multiply(portal.link(side)).multiply(g.matrixWorld)
+  there.add(g)
+  g.matrixAutoUpdate = false
+  g.matrix.copy(m)
+  g.matrixWorldNeedsUpdate = true
+  try { fn() } finally {
+    home.add(g)
+    g.matrixAutoUpdate = true
+    g.updateMatrix()
+    g.updateMatrixWorld(true)
+  }
 }
 
 function hud() {
@@ -1190,30 +1279,6 @@ function makeGrid() {
   m.scale.setScalar(20000)
   m.renderOrder = -3
   return m
-}
-
-/** The gate to NetMap, on the street outside the door. */
-function makeGate() {
-  const group = new THREE.Group()
-  group.position.set(9, 0, 22)
-  group.rotation.y = -0.5
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(2.6, 0.08, 8, 64), new THREE.MeshBasicMaterial({ color: C.green, toneMapped: false }))
-  ring.position.y = 2.7
-  const inner = new THREE.Mesh(new THREE.TorusGeometry(2.2, 0.03, 6, 64), new THREE.MeshBasicMaterial({ color: C.cyan, toneMapped: false }))
-  inner.position.y = 2.7
-  const sign = new THREE.Mesh(new THREE.PlaneGeometry(6, 1.1), new THREE.MeshBasicMaterial({
-    map: neonTexture('NETMAP · JACK IN', { color: '#84f55c', font: FONT_MONO, size: 76, height: 160 }),
-    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false,
-  }))
-  sign.position.y = 6.1
-  group.add(ring, inner, sign)
-  const g = { group, near: false }
-  g.update = (t, p) => {
-    inner.rotation.z = t * 0.8
-    ring.rotation.y = Math.sin(t * 0.5) * 0.15
-    g.near = !!p && p.distanceTo(group.position) < 4.5
-  }
-  return g
 }
 
 function loadSelf() {

@@ -29,12 +29,12 @@ Status: ✅ shipped in the first scene · 🔜 next · 💭 later.
 | **T1 Grid rendering** | three.js scenes, the Tron look (bloom, neon edges), LOD, WebGPU later | this repo, `src/world/` | ✅ first scene |
 | **T2 Chip simulation** | switch-level 6502, its programs, speed, other chips | this repo, `src/chip/`; data from [visual6502](https://github.com/trebonian/visual6502) | ✅ sim + Life |
 | **T3 Avatars and mocap** | voxel and smooth bodies, face, then body pose | this repo, `src/avatar/` | ✅ face |
-| **T4 Portals and NetGL** | doors between places; GL-level links between apps | [portal](https://github.com/pablo-mayrgundter/portal) (NetGL on npm) and `src/world/portal.js` | ✅ same-page portal; NetGL in production elsewhere |
+| **T4 Portals and NetGL** | doors between places; GL-level links between apps | [portal](https://github.com/pablo-mayrgundter/portal) (NetGL on npm) and `src/world/portal.js` | ✅ same-page portal; NetGL guests: NetMap in the gate, celestiary's sky (ready) |
 | **T5 Synchronizer** | presence, chat, voice, rooms; Matrix and murmur | `src/net/` now; shared with Bldrs Collab | 🔜 |
 | **T6 cosmic.js** | frames of space and time, reprojection, floating origin, orbits | `src/cosmic/` now, its own package later | ✅ frames and clocks |
-| **T7 NetMap** | maps of the internet; GeoNetMap; travel along real routes | [netmap](https://github.com/pablo-mayrgundter/netmap) | ✅ live, linked |
+| **T7 NetMap** | maps of the internet; GeoNetMap; travel along real routes | [netmap](https://github.com/pablo-mayrgundter/netmap) | ✅ live, linked, and live in the gate (`map.html`) |
 | **T8 Mist runtime** | donated resources, identity, local-first data, self-hosting | `src/mist/` | ✅ ledger; 🔜 shared compute |
-| **T9 Celestiary** | the sky: stars, planets, orbit.js | [celestiary](https://github.com/celestiary/web) | 💭 |
+| **T9 Celestiary** | the sky: stars, planets, orbit.js | [celestiary](https://github.com/celestiary/web) | 🚧 the abode's sky is celestiary's (`sky.html`) |
 | **T10 Platform and ops** | hosting, domain, CI, budgets, licenses | this repo, `.github/` | ✅ Pages |
 
 ## I1 · Exo Cafe: the first live Cloud City
@@ -214,20 +214,43 @@ the shape of the net.*
   - [ ] Recursion: see the bar through the abode's arch through the bar's arch
 
 ### E3.2 The Grid: NetMap 🔜 (T7, T4)
-- **S3.2.1** As a visitor, I can jack into NetMap from the street. ✅ (a link, for now)
+- **S3.2.1** As a visitor, I can jack into NetMap from the street. ✅ (a link, with a live window onto NetMap in the gate)
 - **S3.2.2** As a visitor, I can ride a LightSail along the internet's links. 🔜 (contracts in [portal#56](https://github.com/pablo-mayrgundter/portal/issues/56), RFC 0004)
-  - [ ] NetMap as a NetGL guest layer in exo: a guest page (`map.html`) whose deck.gl drawing is recorded and replayed into exo's scene, on an agreed frame (ECEF metres; exo's die at 0° N 0° E)
+  - [x] NetMap as a NetGL guest: netmap's `map.html` draws its globe with deck.gl into portal-netgl's recording context, one frame per `layer:view`; exo replays it into a render target (`src/world/netmap-window.js`)
+  - [ ] NetMap as a NetGL guest *layer* in exo's space: views as RFC 0001 matrices on an agreed frame (ECEF metres, RTE; exo's die at 0° N 0° E), depth-composited with the street, not a window
+  - [ ] portal-netgl: a deck guest shim (`frameworks/deck-guest.ts`?) holding what `map.html` learned: luma's drawing-buffer size set by hand, `layerManager.updateLayers()` before a forced `redraw`, `device.submit()` before `endFrame()`, deck's own redraws held back through `_customRender`
+  - [ ] map.html: fiber bundles and the MapLibre basemap (its GL calls), as the app has them
   - [ ] NetMap publishes its links and routes as path anchors (RFC 0004 §4); exo subscribes
   - [ ] The LightSail, exo's own Tron asset at µm scale, flies those paths by exo's clock; the rider is your avatar
   - [ ] portal-netgl: a second deck guest must survive the first one detaching (RFC 0004 §6)
   - [ ] Traceroute from the visitor (or their AS from the browser's IP, server-side) to exo's host
-- **S3.2.3** As a visitor, I see NetMap through a window in the bar, live. (NetGL guest; NetMap is deck.gl)
+- **S3.2.3** As a visitor, I see NetMap through a window, live. 🔜 (NetGL guest; NetMap is deck.gl)
+  - [x] The gate on the street shows the live globe (`src/world/gate.js`, `netmap-window.js`): a camera sweeping slowly over 0° N 0° E, where the die sits, marked; E still jacks in. No guest, no hello in time or no WebGL2: one console line, and the gate as it was
+  - [x] Pace: a guest frame's GPU time is sampled (1-pixel reads round a replay) and views go out no faster than keeps it near 10% of the time; under SwiftShader that's a frame every minute or two
+  - [ ] Measure the guest's cost on real GPUs (desktop, phone) and tune `MAP_SIZE`, `MAP_FRAME_MS` and the share
+  - [ ] A window in the bar too; looking around it (the view following the visitor's angle)
+- **S3.2.5** As a visitor, NetMap lies under exo's world, and I can drop into it anywhere through the gate. 🔜 (T7, T4; asked 2026-11-03)
+  - Decided: the map at **true scale** (1 µm is 1 µm; the chip at 0° N 0° E, a fictitious link from it to anywhere for the LightSail later); **geo** by default, cyber and hybrid switchable; you return through **a gate** where you land.
+  - The frame: exo's street is the tangent plane at 0° N 0° E (x east, y up, z south, µm). ECEF metres to it: `x = Y·1e6`, `y = (X − R)·1e6`, `z = −Z·1e6`. netmap draws in ECEF (geo on its sphere; cyber and hybrid as its layouts put them on the same surface), and exo sends RFC 0001 matrix views relative to the eye (RFC 0004 §1, `view.eye`), so float32 holds at 10¹² µm.
+  - What you see from the street: nothing yet. At 8 µm tall the horizon is ~10 m off, and the Gulf of Guinea lies under the chip; the map shows from altitude, so it shows after the drop.
+  - [ ] map.html: matrix views (ECEF, shared depth, `projection: geo | cyber | hybrid`) beside today's globe-camera views
+  - [ ] The gate: pick a spot on its globe (exo inverts the view it sent: lon, lat, fit), marked; walk through and drop out of the sky over it
+  - [ ] The landing place: a new side like the abode, its own frame (origin at the spot, floating), netmap drawn round it with exo's depth; a return gate to the street
+  - [ ] Open: the visitor's size there (the gate magnifies, as the abode's arch does ×224,000, or you stay µm-sized over a true-scale Earth), the drop's height, and what's underfoot (netmap's land and ocean)
 - **S3.2.4** As a group, we pick where our room's server runs, on GeoNetMap, for least latency. (T5)
 
-### E3.3 The sky: Celestiary 💭 (T9, T4, T6)
+### E3.3 The sky: Celestiary 🚧 (T9, T4, T6)
 - **S3.3.1** As a visitor in the abode, I see the real sky for my place and time, through Celestiary.
-  - [x] Host side (`src/world/celestiary-sky.js`): celestiary's `layer.html` in a cross-origin iframe draws six cube faces in the equator of date at the abode's ×600 time into an atlas, and the dome samples it under the dusk glow and turns it by sidereal time. A guest whose `layer:hello` lacks kind `sky` is let go, with the procedural sky kept
-  - [ ] celestiary: a sky mode for `layer.html` (`?sky=1`: stars, planets, Sun and Moon; hello `kinds: ['sky'], frames: ['equator-of-date']`). Today's layer draws orbits only, so production stays procedural
+  - [x] ~~Cube faces of a sky-only layer~~: dropped for celestiary itself (the whole app, not an export of a few of its parts)
+  - [x] celestiary's `sky.html` (celestiary/web, design/SkyGuest.md): the app less its chrome, landed on Earth at the view's observer, drawing a host's camera (a rotation in the equator of date, any projection) at the host's time; its own meter and eye adaptation (its shadow draws), or `meter=0` for a gain by the Sun's altitude; hello `kinds: ['sky'], frames: ['equator-of-date']`
+  - [x] Host side (`src/world/celestiary-sky.js`): a sync render. Each exo frame sends the camera it draws the abode with (the portal's virtual camera from the bar), holds until the sky for it is in (at most 250 ms), and draws it 1:1, at a pixel per CSS pixel as celestiary's own page draws (`?sky_scale=2` for a retina's own)
+  - [x] Drawn in place, no stand-in: celestiary's final pass replays into the framebuffer the abode is drawn into (the portal's target from the bar, the composer's inside: `drawInto`), the abode over it with its depth cleared; celestiary writes linear colour for it (`sky.html?output=linear`, its hello's `contracts.color`; a guest without it is let go). The first frame too: the dome that looked frames up by direction, and the async mode that needed it, are gone. One bloom for the whole scene: a brighter sky blooms more
+  - [x] One view across the arch: the camera has a side of its own (`exo.viewSide`), carried through the link when the line from the head to it passes through the doorway (`portal.crossing`, as the avatar's step is), and its side's scene is the one drawn: the other side's walls are only ever seen through the door, and nothing switches when the avatar's feet cross. An avatar straddling the door has a ghost through the link in the other scene for that render, so both halves show; the doorway gets depth behind its plane while the camera is within its near plane's reach
+  - [x] The arch, continuous: the abode's doorway sits as far down as the bar's floor stands up (`BAR.floor`), so a crossing keeps your height (it dropped 8 cm); and the doorway's camera is unscaled (the link's 224,000× goes to the projection's depth), so through the arch the abode's fog and lights are its own (they were 4.5× too close and 20× too dim)
+  - [ ] Perf, next: the guest's shadow draws only the frames its meter samples, on portal-netgl 0.6.11 (pablo-mayrgundter/portal#58; celestiary/web#350 ready for it): publish, then bump celestiary's dependency. And a one-frame pipeline (the last frame shown while the next is drawn) if the round trip still costs too much
+  - [ ] celestiary.org serving `sky.html` (its PR), and exo.cafe on its allow-list (in that PR)
+  - [x] A portal-netgl switch to let the guest's shadow draw only the frames its meter samples (0.6.11's settable `shadowDraws`, pablo-mayrgundter/portal#58; not yet published)
+  - [ ] Real-GPU cost: celestiary's frame twice (shadow and replay) each exo frame; `?sky_scale=`, `?sky_meter=0` if it's heavy
   - [ ] portal-netgl: `frame: 'equator-of-date'` and `observer` in `NetGLLayerView` (its type only names `'ecef'`)
 - **S3.3.2** As a visitor, I can step out of the bar into the solar system (a door, like portal's Celestiary demo).
 
