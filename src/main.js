@@ -15,6 +15,7 @@ import { makeChipFloor } from './world/chipfloor.js'
 import { BODY_UM, BODY_PER_LAYOUT, CHIP_UNIT_UM, DIE_GEO, formatLength } from './cosmic/units.js'
 import { makeBar } from './world/bar.js'
 import { makeAbode, ABODE_RATE } from './world/abode.js'
+import { SKY_HOLD_MS } from './world/celestiary-sky.js'
 import { PortalPair } from './world/portal.js'
 import { makeGate } from './world/gate.js'
 import { makeNetMapWindow } from './world/netmap-window.js'
@@ -862,9 +863,17 @@ addEventListener('resize', () => {
 // What being here costs the main thread, as a share of a core: the work
 // of each frame over the time between frames.
 let busy = 0, span = 0
+// A frame held for the sky (celestiary-sky.js, sync): drawn once the sky
+// for its camera is in, or after SKY_HOLD_MS with the last one.
+let held = null
 renderer.setAnimationLoop(() => {
   const t0 = performance.now()
-  frame()
+  if (held) {
+    if (!abode.sky.ready(held.id) && t0 - held.at < SKY_HOLD_MS) return
+    abode.sky.take()
+    draw(held.dt, held.now)
+    held = null
+  } else frame()
   busy += performance.now() - t0
 })
 let lastFrameAt = performance.now()
@@ -1109,6 +1118,18 @@ function frame() {
   if (touch) touchHud(button, freshPrompt)
   world.fog.density = (controls.dist > 60 ? 0.00008 : 0.0009) / BODY_UM
 
+  // In sync, the abode's sky is drawn for this very camera first: ask for
+  // it (the portal's virtual camera from the bar side), and hold the frame.
+  if (abode.sky?.syncing()) {
+    camera.updateMatrixWorld()
+    const view = side === 1 ? { matrixWorld: camera.matrixWorld, projectionMatrix: camera.projectionMatrix } : portal.viewFrom(camera, side)
+    held = { id: abode.sky.request(view.matrixWorld, view.projectionMatrix, abodeFrame.time), at: performance.now(), dt, now }
+    return
+  }
+  draw(dt, now)
+}
+
+function draw(dt, now) {
   portal.render(renderer, camera, side, now)
   composer.render(dt)
 }

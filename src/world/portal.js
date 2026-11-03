@@ -84,6 +84,16 @@ export class PortalPair {
   }
 
   /**
+   * The camera side i's doorway shows the other side through: its world
+   * matrix there, and its projection (the camera's; render adds the oblique
+   * near plane, which only changes depth).
+   */
+  viewFrom(camera, i) {
+    camera.updateMatrixWorld()
+    return { matrixWorld: this.link(i).clone().multiply(camera.matrixWorld), projectionMatrix: camera.projectionMatrix }
+  }
+
+  /**
    * If the segment prev→next (world points in side i's scene) passes through
    * side i's doorway, returns the link matrix to carry things across.
    */

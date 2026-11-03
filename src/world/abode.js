@@ -51,8 +51,12 @@ export function makeAbode({ renderer } = {}) {
     side: THREE.BackSide, depthWrite: false, fog: false,
     uniforms: celestiary ? celestiary.uniforms : {},
     defines: celestiary ? { CELESTIARY: 1 } : {},
-    vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-    fragmentShader: `varying vec3 vP;
+    // vW: the dome's point in world space. celestiary's sky is at infinity,
+    // so it's looked up by direction from the camera (cameraPosition), not
+    // from the dome's centre: the camera stands metres off it, and the
+    // difference was degrees at the screen's edges.
+    vertexShader: 'varying vec3 vP; varying vec3 vW; void main(){ vP = normalize(position); vW = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `varying vec3 vP; varying vec3 vW;
       #ifdef CELESTIARY
       ${SKY_GLSL}
       #endif
@@ -67,7 +71,7 @@ export function makeAbode({ renderer } = {}) {
         if (skyOn > 0.5) {
           // celestiary's sky, air and all, wherever its last frame reaches;
           // the dusk past its edge.
-          vec4 s = skySample(normalize(vP));
+          vec4 s = skySample(normalize(vW - cameraPosition));
           c = mix(c, s.rgb, s.a);
         }
         #endif

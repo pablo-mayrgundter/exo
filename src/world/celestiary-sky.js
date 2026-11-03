@@ -46,8 +46,10 @@ export const SKY_OVERSCAN = 1.3
 /** The most it widens while the head turns. */
 export const SKY_MAX_OVERSCAN = 3
 /** The sky's pixels per screen pixel, by default; and the largest side, px. */
-export const SKY_SCALE = 0.6
-const SKY_MAX_SIDE = 1600
+export const SKY_SCALE = 1
+const SKY_MAX_SIDE = 4096
+/** In sync (the default), the longest exo holds a frame for the sky's, ms; then it draws the last one. */
+export const SKY_HOLD_MS = 250
 /**
  * The least wall time between sky frames while the head is still, ms: the
  * sky at infinity reprojects exactly, so only what moves in it (the Sun,
@@ -185,12 +187,13 @@ function skyUniforms(targets) {
 export const SKY_GLSL = `
   uniform sampler2D skyTex, skyTex2; uniform mat3 skyEq; uniform mat4 skyVP, skyVP2; uniform float skyOn, skyOn2;
   vec3 skyLinear(vec3 c){ return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c)); }
-  // A frame's colour (rgb) and how well it covers direction d (a), fading over its last few percent.
+  // A frame's colour (rgb) and whether it covers direction d (a): to its
+  // very edge (in sync a frame is exactly the screen), and nothing past it.
   vec4 skyFrame(sampler2D tex, mat4 vp, vec3 d){
     vec4 c = vp * vec4(d, 0.0);
     if (c.w <= 0.0) return vec4(0.0);
     vec2 ndc = c.xy / c.w;
-    vec2 edge = smoothstep(vec2(1.0), vec2(0.94), abs(ndc));
+    vec2 edge = 1.0 - step(vec2(1.0), abs(ndc));
     float a = edge.x * edge.y;
     if (a <= 0.0) return vec4(0.0);
     return vec4(skyLinear(texture2D(tex, 0.5 + 0.5 * ndc).rgb), a);
@@ -229,7 +232,11 @@ export function makeCelestiarySky({ renderer, site, epochMs = Date.now(), search
   const keep = (a, v, n = 300) => { a.push(v); if (a.length > n) a.shift() }
   const params = new URLSearchParams(search)
   const perfOn = params.get('sky_perf')
+  // The guest draws at a pixel per CSS pixel, as celestiary's own page does; 2 is a retina screen's own.
   const scale = Math.min(2, Math.max(0.25, Number(params.get('sky_scale')) || SKY_SCALE))
+  // Sync (the default): each exo frame waits for the sky drawn for its own
+  // camera, drawn 1:1. ?sky_sync=0: frames come on their own, reprojected.
+  const sync = params.get('sky_sync') !== '0'
   const stillMs = Number.isFinite(Number(params.get('sky_still_ms'))) && params.get('sky_still_ms') !== null ? Number(params.get('sky_still_ms')) : SKY_STILL_MS
   const stats = { status: 'idle', reason: null, origin: null, hello: null, views: 0, frames: 0, lastTimeMs: 0, latencyMs: 0, size: [0, 0], overscan: SKY_OVERSCAN }
 
@@ -344,7 +351,7 @@ export function makeCelestiarySky({ renderer, site, epochMs = Date.now(), search
     // CSS pixels, not the drawing buffer's: a sky at 2× a retina screen's
     // was 2 Mpx of the whole app a frame, for a soft, distant picture.
     const buf = renderer.getSize(new THREE.Vector2())
-    const f = Math.min(scale * SKY_OVERSCAN, SKY_MAX_SIDE / Math.max(buf.x, buf.y, 1))
+    const f = Math.min(scale * (sync ? 1 : SKY_OVERSCAN), SKY_MAX_SIDE / Math.max(buf.x, buf.y, 1))
     const w = Math.max(64, Math.round(buf.x * f)), h = Math.max(64, Math.round(buf.y * f))
     if (targets[0].width !== w || targets[0].height !== h) {
       for (const t of targets) t.setSize(w, h)
@@ -355,7 +362,7 @@ export function makeCelestiarySky({ renderer, site, epochMs = Date.now(), search
   }
 
   function sendView(timeMs) {
-    const k = skyOverscan(1 / camera.projectionMatrix.elements[5], look.rate, stats.latencyMs / 1000)
+    const k = sync ? 1 : skyOverscan(1 / camera.projectionMatrix.elements[5], look.rate, stats.latencyMs / 1000)
     stats.overscan = Math.round(k * 100) / 100
     const [w, h] = size()
     const viewMatrix = skyViewMatrix(camera.matrixWorld, worldFromEq)
@@ -428,21 +435,30 @@ export function makeCelestiarySky({ renderer, site, epochMs = Date.now(), search
     if (!camera || failed) return
     if (!started) { start(); return }
     if (!net || stats.status === 'connecting' || !isSkyHello(stats.hello)) return
-    if (arrived.length) {
-      const ids = arrived.splice(0)
-      drain(ids)
-      stats.frames += ids.length
-      if (!uniforms.skyOn.value) console.info(`[sky] celestiary sky from ${stats.origin}`)
-      uniforms.skyOn.value = 1
-      stats.status = 'sky'
-      if (inFlight && ids.includes(inFlight.viewId)) inFlight = null
-    }
+    take()
     const watched = now - seenAt < IDLE_MS && !document.hidden
     if (inFlight && now - inFlight.sentAt > RESEND_MS) inFlight = null // lost: ask again
+    // In sync the frame loop asks (request), once it has placed the camera
+    // and while the dome is in view; until the first frame, this does.
+    if (sync && stats.status === 'sky') return
     // Still, a frame at most every stillMs; turning, as fast as they come.
     const due = look.rate > 0.05 || now - lastSent >= stillMs
     if (!inFlight && watched && due) { lastSent = now; sendView(timeMs) }
   }
+
+  /** Replays the frames that have come in, if any. */
+  function take() {
+    if (!net || !arrived.length) return
+    const ids = arrived.splice(0)
+    drain(ids)
+    stats.frames += ids.length
+    if (!uniforms.skyOn.value) console.info(`[sky] celestiary sky from ${stats.origin}`)
+    uniforms.skyOn.value = 1
+    stats.status = 'sky'
+    lastIn = Math.max(lastIn, ...ids.filter(Number.isFinite))
+    if (inFlight && ids.includes(inFlight.viewId)) inFlight = null
+  }
+  let lastIn = 0
 
   /** The cameras that drew the dome, by camera: where each looked last, for its turn rate. */
   const looks = new WeakMap()
@@ -497,6 +513,26 @@ export function makeCelestiarySky({ renderer, site, epochMs = Date.now(), search
     seen,
     /** The abode's time as Unix ms. */
     timeMs: (abodeTime) => epochMs + abodeTime * 1000,
+    /**
+     * Sync: whether this frame should wait for the sky drawn for its camera:
+     * on, the guest's sky showing, and the dome drawn lately (it is in view).
+     */
+    syncing() {
+      return sync && !failed && !!net && stats.status === 'sky' && performance.now() - seenAt < IDLE_MS && !document.hidden
+    },
+    /**
+     * Sync: ask for the sky for the camera this frame draws the dome with
+     * (its matrixWorld and projection), at abode time t. Returns its id.
+     */
+    request(matrixWorld, projectionMatrix, abodeTime) {
+      camera = { matrixWorld: matrixWorld.clone(), projectionMatrix: projectionMatrix.clone() }
+      sendView(epochMs + abodeTime * 1000)
+      return viewId
+    },
+    /** Sync: whether the frame for view `id` has come in (or a later one). */
+    ready(id) { return lastIn >= id || arrived.some((a) => a >= id) },
+    /** Replays the frames that have come in, before drawing. */
+    take,
     /**
      * What the sky costs (?sky_perf=1): here, the replay's CPU time (and with
      * its GPU work, which a 1-pixel read waits for), the frames' latency,
