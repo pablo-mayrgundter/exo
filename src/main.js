@@ -13,7 +13,7 @@ import { job as maxJob, ZP as MAX_ZP } from './chip/max.js'
 import { buildVcpu } from './chip/vcpu.js'
 import { makeChipFloor } from './world/chipfloor.js'
 import { BODY_UM, BODY_PER_LAYOUT, CHIP_UNIT_UM, DIE_GEO, formatLength } from './cosmic/units.js'
-import { makeBar } from './world/bar.js'
+import { makeBar, BAR } from './world/bar.js'
 import { makeAbode, ABODE_RATE } from './world/abode.js'
 import { SKY_HOLD_MS } from './world/celestiary-sky.js'
 import { PortalPair } from './world/portal.js'
@@ -135,14 +135,6 @@ if (touch) {
   const setSize = bloom.setSize.bind(bloom)
   bloom.setSize = (w, h) => setSize(w / renderer.getPixelRatio(), h / renderer.getPixelRatio())
 }
-// Pixels tagged by a doorway (alpha below zero, portal.js) are the other
-// side's, and take its threshold: thresholdThere.
-bloom.highPassUniforms.thresholdThere = { value: BLOOM_THRESHOLD }
-bloom.materialHighPassFilter.fragmentShader = bloom.materialHighPassFilter.fragmentShader
-  .replace('uniform float smoothWidth;', 'uniform float smoothWidth;\nuniform float thresholdThere;')
-  .replace('float alpha = smoothstep( luminosityThreshold, luminosityThreshold + smoothWidth, v );',
-    'float th = mix( luminosityThreshold, thresholdThere, clamp( -texel.a, 0.0, 1.0 ) );\n\t\t\tfloat alpha = smoothstep( th, th + smoothWidth, v );\n\t\t\ttexel.a = 1.0;')
-bloom.materialHighPassFilter.needsUpdate = true
 if (params.get('fx') !== '0') composer.addPass(bloom)
 composer.addPass(new OutputPass())
 
@@ -891,7 +883,6 @@ renderer.setAnimationLoop(() => {
   const t0 = performance.now()
   if (held) {
     if (!abode.sky.ready(held.id) && t0 - held.at < SKY_HOLD_MS) return
-    abode.sky.take()
     draw(held.dt, held.now)
     held = null
   } else frame()
@@ -967,7 +958,7 @@ function frame() {
     controls.yaw += new THREE.Euler().setFromQuaternion(q, 'YXZ').y
     side = 1 - side
     pos.divideScalar(unitOf(side))
-    pos.y = side === 0 ? 0.08 : 0
+    pos.y = side === 0 ? BAR.floor : 0 // the doorways line up floor to floor (abode.js)
     scenes[side].add(avatar.group)
     renderPass.scene = scenes[side]
     note(side === 1 ? `Pablo's abode: time runs ${formatRate(abodeFrame.absoluteRate)}.` : 'Back in Exo Cafe.')
@@ -1005,12 +996,6 @@ function frame() {
   bar.update(dt, floor, tick, now)
   jukebox.update(dt, side === 0 ? avatar.group.getWorldPosition(meAt) : null)
   abode.update(abodeFrame.time, now)
-  // Under celestiary's daylight the whole sky is brighter than the bloom's
-  // threshold; raise it with the day so the glow stays the neon's. Through
-  // a doorway, the other side's (thresholdThere).
-  const abodeThreshold = BLOOM_THRESHOLD + (0.9 - BLOOM_THRESHOLD) * abode.daylight
-  bloom.threshold = side === 1 ? abodeThreshold : BLOOM_THRESHOLD
-  bloom.highPassUniforms.thresholdThere.value = side === 1 ? BLOOM_THRESHOLD : abodeThreshold
   gate.update(now, side === 0 ? pos : null)
   const nearCar = side === 0 && pos.distanceTo(car.group.position) < 4.5
   const nearSeat = side === 0 && !seatedNow && !riding && barLife.freeSeatNear(pos, takenSeats()) >= 0

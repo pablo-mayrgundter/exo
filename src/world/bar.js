@@ -12,7 +12,7 @@ import { MANIFESTO } from '../content.js'
 import { Avatar } from '../avatar/avatar.js'
 import { BOARD } from '../chip/life.js'
 
-export const BAR = { w: 20, d: 14, h: 8, door: 3.2, doorH: 3.6, arch: 2.4, archH: 3.2 }
+export const BAR = { w: 20, d: 14, h: 8, door: 3.2, doorH: 3.6, arch: 2.4, archH: 3.2, floor: 0.08 }
 
 const basic = (o) => new THREE.MeshBasicMaterial({ toneMapped: false, ...o })
 
@@ -31,7 +31,7 @@ export function makeBar({ names }) {
   floorTex.repeat.set(w / 6, d / 6)
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(w, d), basic({ map: floorTex }))
   floor.rotation.x = -Math.PI / 2
-  floor.position.y = 0.08
+  floor.position.y = BAR.floor
   group.add(floor)
   const grid = new THREE.GridHelper(w, w, C.line, 0x123a66)
   grid.scale.z = d / w

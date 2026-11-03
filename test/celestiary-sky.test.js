@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import * as THREE from 'three'
 import {
-  resolveSkySrc, isSkyHello, gmstRad, eqToWorld, skyViewMatrix, skyProjection, skyLookup, skyOverscan, sunAltitude, SKY_OVERSCAN, SKY_MAX_OVERSCAN, SKY_SRC,
+  resolveSkySrc, isSkyHello, gmstRad, eqToWorld, skyViewMatrix, skyProjection, sunAltitude, SKY_SRC,
 } from '../src/world/celestiary-sky.js'
 
 // celestiary.org/layer.html's hello as published (2026-10-30): orbits only.
@@ -10,7 +10,14 @@ const ORBITS_HELLO = {
   capabilities: { kinds: ['overlay'], depth: ['shared'], projections: ['matrix'], frames: ['ecef'], warp: false, anchors: true, time: true, labels: false },
 }
 // celestiary's sky guest (sky.html, design/SkyGuest.md there).
-const SKY_HELLO = { type: 'layer:hello', version: 1, adapter: 'celestiary-sky', capabilities: { kinds: ['sky'], depth: ['none'], projections: ['matrix'], frames: ['equator-of-date'], time: true, observer: true } }
+const SKY_HELLO = { type: 'layer:hello', version: 1, adapter: 'celestiary-sky', capabilities: { kinds: ['sky'], depth: ['none'], projections: ['matrix'], frames: ['equator-of-date'], time: true, observer: true }, contracts: { alpha: 'opaque', color: 'linear' } }
+// Where a direction lands in a frame drawn with clip ← equator `vp`: its texture coordinates, or null outside it.
+const lookup = (vp, d) => {
+  const c = new THREE.Vector4(d.x, d.y, d.z, 0).applyMatrix4(vp)
+  if (c.w <= 0) return null
+  const x = c.x / c.w, y = c.y / c.w
+  return Math.abs(x) > 1 || Math.abs(y) > 1 ? null : [0.5 + 0.5 * x, 0.5 + 0.5 * y]
+}
 
 describe('the guest page', () => {
   const prod = 'https://pablo-mayrgundter.github.io'
@@ -47,6 +54,10 @@ describe('the hello', () => {
   it('needs the frame as well as the kind', () => {
     expect(isSkyHello({ capabilities: { kinds: ['sky'], frames: ['ecef'] } })).toBe(false)
     expect(isSkyHello(null)).toBe(false)
+  })
+  it('needs linear colour, to draw in place: an older page writing display colour is let go', () => {
+    expect(isSkyHello({ ...SKY_HELLO, contracts: { alpha: 'opaque', color: 'display' } })).toBe(false)
+    expect(isSkyHello({ ...SKY_HELLO, contracts: undefined })).toBe(false)
   })
 })
 
@@ -100,18 +111,18 @@ describe("the camera's view", () => {
   })
   it('puts what the camera looks at in the middle of the frame', () => {
     const ahead = new THREE.Vector3(0, 0, -1).transformDirection(camera.matrixWorld)
-    const [u, v] = skyLookup(vp, eq(ahead))
+    const [u, v] = lookup(vp, eq(ahead))
     expect(u).toBeCloseTo(0.5, 9)
     expect(v).toBeCloseTo(0.5, 9)
   })
-  it("covers the camera's field with room to turn", () => {
-    // The top edge of the camera's field lands short of the frame's.
-    const top = new THREE.Vector3(0, Math.tan(30 * Math.PI / 180), -1).normalize().transformDirection(camera.matrixWorld)
-    expect(skyLookup(vp, eq(top))[1]).toBeCloseTo(0.5 + 0.5 / SKY_OVERSCAN, 9)
-    const right = new THREE.Vector3(Math.tan(30 * Math.PI / 180) * 16 / 9, 0, -1).normalize().transformDirection(camera.matrixWorld)
-    expect(skyLookup(vp, eq(right))[0]).toBeCloseTo(0.5 + 0.5 / SKY_OVERSCAN, 9)
+  it("is exactly the camera's field: drawn 1:1 into its frame", () => {
+    // The edges of the camera's field are the frame's.
+    const top = new THREE.Vector3(0, Math.tan(30 * Math.PI / 180) * 0.999, -1).normalize().transformDirection(camera.matrixWorld)
+    expect(lookup(vp, eq(top))[1]).toBeCloseTo(0.5 + 0.5 * 0.999, 9)
+    const right = new THREE.Vector3(Math.tan(30 * Math.PI / 180) * 16 / 9 * 0.999, 0, -1).normalize().transformDirection(camera.matrixWorld)
+    expect(lookup(vp, eq(right))[0]).toBeCloseTo(0.5 + 0.5 * 0.999, 9)
     // Behind it, nothing.
-    expect(skyLookup(vp, eq(new THREE.Vector3(0, 0, 1).transformDirection(camera.matrixWorld)))).toBeNull()
+    expect(lookup(vp, eq(new THREE.Vector3(0, 0, 1).transformDirection(camera.matrixWorld)))).toBeNull()
   })
 })
 
@@ -124,7 +135,7 @@ describe("the Sun's height, for the daylight", () => {
   })
 })
 
-describe('a portal\'s camera, and a turning head', () => {
+describe('a portal\'s camera', () => {
   it("draws for a camera whose matrixWorld was set directly, as the portal's virtual camera is", () => {
     // Its position and rotation are never set: only matrixWorld and the projection.
     const v = new THREE.PerspectiveCamera()
@@ -140,16 +151,9 @@ describe('a portal\'s camera, and a turning head', () => {
     expect(a.elements.map((x) => +x.toFixed(9))).toEqual(b.elements.map((x) => +x.toFixed(9)))
     // And what it looks at is the frame's middle.
     const ahead = new THREE.Vector3(0, 0, -1).transformDirection(real.matrixWorld).applyMatrix3(M.clone().transpose())
-    const [u, w] = skyLookup(a, ahead)
+    const [u, w] = lookup(a, ahead)
     expect(u).toBeCloseTo(0.5, 9)
     expect(w).toBeCloseTo(0.5, 9)
-  })
-  it('widens the frame for the turn the head makes while it is on its way', () => {
-    const t = Math.tan(35 * Math.PI / 180)
-    expect(skyOverscan(t, 0, 0.2)).toBe(SKY_OVERSCAN)
-    const turning = skyOverscan(t, 1.5, 0.2) // 1.5 rad/s for 0.2 s
-    expect(turning).toBeGreaterThan(SKY_OVERSCAN)
-    expect(skyOverscan(t, 50, 2)).toBe(SKY_MAX_OVERSCAN)
   })
 })
 

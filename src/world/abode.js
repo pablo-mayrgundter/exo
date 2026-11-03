@@ -11,7 +11,8 @@
 import * as THREE from 'three'
 import { C } from '../theme.js'
 import { rng, neonTexture, FONT_MONO } from './textures.js'
-import { makeCelestiarySky, SKY_GLSL, sunAltitude } from './celestiary-sky.js'
+import { makeCelestiarySky, sunAltitude } from './celestiary-sky.js'
+import { BAR } from './bar.js'
 
 export const ABODE_RATE = 600
 /** Through twilight, under celestiary's sky, it slows to this: dawn and dusk last, and the meter keeps up. */
@@ -44,23 +45,14 @@ export function makeAbode({ renderer } = {}) {
   const colliders = []
   const r = rng(1009)
 
-  // Sky: a dusk gradient dome, over celestiary's sky when it comes
-  // (celestiary-sky.js), else over procedural stars on a sphere that turns
-  // with the abode's clock.
+  // Sky: celestiary's, drawn in place under the abode (celestiary-sky.js
+  // drawInto) once it comes; until then, or if it can't, a dusk gradient
+  // dome over procedural stars on a sphere that turns with the abode's clock.
   const celestiary = renderer ? makeCelestiarySky({ renderer, site: ABODE_SITE }) : null
   const sky = new THREE.Mesh(new THREE.SphereGeometry(400, 32, 16), new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false, fog: false,
-    uniforms: celestiary ? celestiary.uniforms : {},
-    defines: celestiary ? { CELESTIARY: 1 } : {},
-    // vW: the dome's point in world space. celestiary's sky is at infinity,
-    // so it's looked up by direction from the camera (cameraPosition), not
-    // from the dome's centre: the camera stands metres off it, and the
-    // difference was degrees at the screen's edges.
-    vertexShader: 'varying vec3 vP; varying vec3 vW; void main(){ vP = normalize(position); vW = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-    fragmentShader: `varying vec3 vP; varying vec3 vW;
-      #ifdef CELESTIARY
-      ${SKY_GLSL}
-      #endif
+    vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `varying vec3 vP;
       void main(){
         float h = vP.y;
         // Linear colours: dusk orange at the horizon, violet, then night.
@@ -68,19 +60,12 @@ export function makeAbode({ renderer } = {}) {
         vec3 mid = vec3(0.09, 0.03, 0.14);
         vec3 top = vec3(0.004, 0.006, 0.03);
         vec3 c = h < 0.12 ? mix(horizon, mid, smoothstep(-0.02, 0.12, h)) : mix(mid, top, smoothstep(0.12, 0.6, h));
-        #ifdef CELESTIARY
-        if (skyOn > 0.5) {
-          // celestiary's sky, air and all, wherever its last frame reaches;
-          // the dusk past its edge.
-          vec4 s = skySample(normalize(vW - cameraPosition));
-          c = mix(c, s.rgb, s.a);
-        }
-        #endif
         gl_FragColor = vec4(c, 1.0);
       }`,
   }))
   // The guest starts when the abode is first drawn, from either side, and
-  // draws for the camera that drew it last.
+  // draws for the camera that drew it last. Under celestiary's sky the dome
+  // still draws, colour off, to say the abode is in view.
   if (celestiary) sky.onBeforeRender = (_r, _s, camera) => celestiary.seen(camera)
   scene.add(sky)
   const starPos = []
@@ -227,9 +212,11 @@ export function makeAbode({ renderer } = {}) {
   gable.position.set(0, 7.2 + 3.1, 7.05)
   temple.add(gable)
 
-  // The arch back to the bar.
+  // The arch back to the bar. Its foot is as far below the ground as the
+  // bar's floor stands over its own arch's (BAR.floor), so the two doorways
+  // line up floor to floor and a crossing keeps your height.
   const arch = new THREE.Group()
-  arch.position.set(0, 0, 16)
+  arch.position.set(0, -BAR.floor, 16)
   scene.add(arch)
   const archLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints([
     new THREE.Vector3(-1.2, 0, 0), new THREE.Vector3(-1.2, 3.2, 0), new THREE.Vector3(1.2, 3.2, 0), new THREE.Vector3(1.2, 0, 0)]),
@@ -241,7 +228,7 @@ export function makeAbode({ renderer } = {}) {
   archSign.rotation.y = Math.PI
   arch.add(archSign)
   const portalAnchor = new THREE.Object3D()
-  portalAnchor.position.set(0, 1.6, 16)
+  portalAnchor.position.set(0, BAR.archH / 2 - BAR.floor, 16)
   portalAnchor.rotation.y = Math.PI // its +z faces the temple
   scene.add(portalAnchor)
   // No collider at the arch: it would stop you walking back through it.
@@ -263,13 +250,11 @@ export function makeAbode({ renderer } = {}) {
       if (celestiary) {
         celestiary.update(abodeTime)
         pole.visible = !celestiary.on
-        // Drawn in place (celestiary-sky.js drawInto), the sky is under the
-        // abode already: the dome draws nothing (it still says the abode is
-        // in view), and there's no background colour, which three would
-        // clear the frame to.
-        const inPlace = celestiary.direct
-        sky.material.colorWrite = !inPlace
-        scene.background = inPlace ? null : background
+        // celestiary's sky is under the abode already (drawInto): the dome
+        // draws nothing, and there's no background colour, which three
+        // would clear the frame to.
+        sky.material.colorWrite = !celestiary.on
+        scene.background = celestiary.on ? null : background
       }
       candleMat.uniforms.t.value = wallTime
     },

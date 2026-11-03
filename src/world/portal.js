@@ -34,11 +34,7 @@ export class PortalPair {
             // A shimmer at the rim, so the doorway reads as a doorway.
             float e = min(min(vUv.x, 1.0 - vUv.x), 1.0 - vUv.y);
             float rim = exp(-e * 40.0) * (0.6 + 0.4 * sin(time * 3.0 + vUv.y * 20.0));
-            // Alpha below zero tags the other side's pixels, so the bloom
-            // takes that side's threshold for them (main.js): a daylit
-            // abode through the door glows as it does inside, not white.
-            // The rim is this side's.
-            gl_FragColor = vec4(c + vec3(0.42, 0.92, 0.95) * rim, -1.0 + min(rim, 1.0));
+            gl_FragColor = vec4(c + vec3(0.42, 0.92, 0.95) * rim, 1.0);
           }`,
       })
       s.surface = new THREE.Mesh(new THREE.PlaneGeometry(width, height), mat)
@@ -69,9 +65,16 @@ export class PortalPair {
 
     camera.updateMatrixWorld()
     const v = this.virtual
-    v.matrixWorld.copy(this.link(i)).multiply(camera.matrixWorld)
+    // The link carries a scale (the abode's metres against the street's
+    // micrometres). The camera there is unscaled, so its view-space
+    // distances are that scene's own (its fog, its lights' falloff), and
+    // the scale goes to the projection's depth (near and far, in e[14]),
+    // which is all it changes there.
+    const { matrixWorld, scale } = this.viewFrom(camera, i, true)
+    v.matrixWorld.copy(matrixWorld)
     v.matrixWorldInverse.copy(v.matrixWorld).invert()
     v.projectionMatrix.copy(camera.projectionMatrix)
+    v.projectionMatrix.elements[14] *= scale
     // Oblique near plane on the far doorway, facing out of it.
     const n = new THREE.Vector3(0, 0, 1).applyQuaternion(there.anchor.getWorldQuaternion(new THREE.Quaternion()))
     const p = there.anchor.getWorldPosition(new THREE.Vector3())
@@ -102,9 +105,13 @@ export class PortalPair {
    * matrix there, and its projection (the camera's; render adds the oblique
    * near plane, which only changes depth).
    */
-  viewFrom(camera, i) {
+  viewFrom(camera, i, withScale = false) {
     camera.updateMatrixWorld()
-    return { matrixWorld: this.link(i).clone().multiply(camera.matrixWorld), projectionMatrix: camera.projectionMatrix }
+    const m = this.link(i).clone().multiply(camera.matrixWorld)
+    const p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3()
+    m.decompose(p, q, s)
+    const matrixWorld = new THREE.Matrix4().compose(p, q, new THREE.Vector3(1, 1, 1))
+    return withScale ? { matrixWorld, scale: s.x } : { matrixWorld, projectionMatrix: camera.projectionMatrix }
   }
 
   /**
