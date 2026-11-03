@@ -375,6 +375,8 @@ if (params.has('enter')) enter()
 function enter() {
   if (entered) return
   entered = true
+  // celestiary's sky loads now, so it's in by the time you reach the arch.
+  abode.sky?.warm()
   const name = $('handle').value.trim().slice(0, 24) || me.name
   me.name = name
   saveSelf(me)
@@ -1145,7 +1147,7 @@ function frame() {
 
   // In sync, the abode's sky is drawn for this very camera first: ask for
   // it (the portal's virtual camera from the bar side), and hold the frame.
-  if (abode.sky?.syncing()) {
+  if (abode.sky?.syncing(viewSide === 1 || portal.visible(camera, viewSide))) {
     camera.updateMatrixWorld()
     const view = viewSide === 1 ? { matrixWorld: camera.matrixWorld, projectionMatrix: camera.projectionMatrix } : portal.viewFrom(camera, viewSide)
     held = { id: abode.sky.request(view.matrixWorld, view.projectionMatrix, abodeFrame.time), at: performance.now(), dt, now }

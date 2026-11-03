@@ -118,6 +118,18 @@ export class PortalPair {
     there.surface.visible = true
   }
 
+  /** Whether side i's doorway is in the camera's view this frame, facing it: the other side will be drawn through it. */
+  visible(camera, i) {
+    const here = this.sides[i]
+    const toCam = camera.getWorldPosition(new THREE.Vector3()).sub(here.anchor.getWorldPosition(new THREE.Vector3()))
+    const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(here.anchor.getWorldQuaternion(new THREE.Quaternion()))
+    if (toCam.dot(normal) <= 0) return false
+    camera.updateMatrixWorld()
+    const frustum = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse))
+    here.surface.updateWorldMatrix(true, false)
+    return frustum.intersectsBox(new THREE.Box3().setFromObject(here.surface))
+  }
+
   /**
    * The camera side i's doorway shows the other side through: its world
    * matrix there, and its projection (the camera's; render adds the oblique
