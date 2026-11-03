@@ -13,6 +13,14 @@
 // (the model doesn't take two at once).
 
 const KOKORO = 'https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/dist/kokoro.web.js'
+
+// onnxruntime logs its warnings (graph nodes assigned to the CPU, and how to
+// see which) through console.error: not errors, and nothing to act on.
+const consoleError = console.error.bind(console)
+console.error = (...args) => {
+  if (typeof args[0] === 'string' && /\[W:onnxruntime/.test(args[0])) return console.debug(...args)
+  consoleError(...args)
+}
 const MODEL = 'onnx-community/Kokoro-82M-v1.0-ONNX'
 
 let tts = null

@@ -46,8 +46,16 @@ export const SKY_OVERSCAN = 1.3
 /** The most it widens while the head turns. */
 export const SKY_MAX_OVERSCAN = 3
 /** The sky's pixels per screen pixel, by default; and the largest side, px. */
-export const SKY_SCALE = 0.75
-const SKY_MAX_SIDE = 2048
+export const SKY_SCALE = 0.6
+const SKY_MAX_SIDE = 1600
+/**
+ * The least wall time between sky frames while the head is still, ms: the
+ * sky at infinity reprojects exactly, so only what moves in it (the Sun,
+ * the air, the clouds) waits for a new frame. Turning, they come as fast as
+ * the guest makes them. (A frame of the full app at 2 Mpx was 55-95 ms of
+ * GPU on a laptop, every exo frame.)
+ */
+export const SKY_STILL_MS = 250
 /** A view unanswered this long is sent again, ms. */
 const RESEND_MS = 5_000
 /** The dome unseen this long, no more views, ms. */
@@ -222,6 +230,7 @@ export function makeCelestiarySky({ renderer, site, epochMs = Date.now(), search
   const params = new URLSearchParams(search)
   const perfOn = params.get('sky_perf')
   const scale = Math.min(2, Math.max(0.25, Number(params.get('sky_scale')) || SKY_SCALE))
+  const stillMs = Number.isFinite(Number(params.get('sky_still_ms'))) && params.get('sky_still_ms') !== null ? Number(params.get('sky_still_ms')) : SKY_STILL_MS
   const stats = { status: 'idle', reason: null, origin: null, hello: null, views: 0, frames: 0, lastTimeMs: 0, latencyMs: 0, size: [0, 0], overscan: SKY_OVERSCAN }
 
   let seenAt = -Infinity, started = false, failed = false
@@ -327,12 +336,14 @@ export function makeCelestiarySky({ renderer, site, epochMs = Date.now(), search
   }
 
   /**
-   * The targets at the drawing buffer's size × scale × SKY_OVERSCAN, held
+   * The targets at the canvas's CSS size × scale × SKY_OVERSCAN, held
    * under SKY_MAX_SIDE. Not by the turn's wider overscan: a resize clears
    * the frame on show, so a turning head gets fewer pixels a degree instead.
    */
   function size() {
-    const buf = renderer.getDrawingBufferSize(new THREE.Vector2())
+    // CSS pixels, not the drawing buffer's: a sky at 2× a retina screen's
+    // was 2 Mpx of the whole app a frame, for a soft, distant picture.
+    const buf = renderer.getSize(new THREE.Vector2())
     const f = Math.min(scale * SKY_OVERSCAN, SKY_MAX_SIDE / Math.max(buf.x, buf.y, 1))
     const w = Math.max(64, Math.round(buf.x * f)), h = Math.max(64, Math.round(buf.y * f))
     if (targets[0].width !== w || targets[0].height !== h) {
@@ -403,7 +414,7 @@ export function makeCelestiarySky({ renderer, site, epochMs = Date.now(), search
     keep(perf.latency, stats.latencyMs)
   }
 
-  let daylight = 0, lastUpdate = 0
+  let daylight = 0, lastUpdate = 0, lastSent = 0
   function update(abodeTime) {
     const timeMs = epochMs + abodeTime * 1000
     daylight = THREE.MathUtils.smoothstep(sunAltitude(timeMs, site), -6, 6)
@@ -428,7 +439,9 @@ export function makeCelestiarySky({ renderer, site, epochMs = Date.now(), search
     }
     const watched = now - seenAt < IDLE_MS && !document.hidden
     if (inFlight && now - inFlight.sentAt > RESEND_MS) inFlight = null // lost: ask again
-    if (!inFlight && watched) sendView(timeMs)
+    // Still, a frame at most every stillMs; turning, as fast as they come.
+    const due = look.rate > 0.05 || now - lastSent >= stillMs
+    if (!inFlight && watched && due) { lastSent = now; sendView(timeMs) }
   }
 
   /** The cameras that drew the dome, by camera: where each looked last, for its turn rate. */

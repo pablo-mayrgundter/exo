@@ -86,8 +86,10 @@ by the community that gathers at [exo.cafe](https://exo.cafe).
   - it draws your camera's view each frame, with its day, sunsets, air,
     clouds and stars, at the abode's ×600 time;
   - until it's in, or if it can't be, the dusk is procedural;
-  - `?sky=0` skips it; `?sky_scale=` sets its resolution (0.75 of the
-    screen's); `?sky_meter=0` asks for its cheaper exposure.
+  - `?sky=0` skips it; `?sky_scale=` sets its resolution (0.6 of the
+    screen's CSS pixels); `?sky_still_ms=` the least time between its
+    frames while you look still (250; turning, they come as fast as they
+    can); `?sky_meter=0` asks for its cheaper exposure.
   - Its clock slows from ×600 to ×60 through twilight, so dawn and dusk
     last and celestiary's eye keeps up.
   - `?sky_perf=1` measures it: `await exo.abode.sky.perf()` (with
