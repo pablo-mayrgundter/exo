@@ -48,8 +48,6 @@ const SKY_MAX_SIDE = 4096
 export const SKY_HOLD_MS = 250
 /** A view unanswered this long is sent again, ms. */
 const RESEND_MS = 5_000
-/** The abode unseen this long, no more views, ms. */
-const IDLE_MS = 1_000
 const NEAR = 1, FAR = 1e8
 
 export { isLocalOrigin }
@@ -138,7 +136,9 @@ export function skyProjection(projectionMatrix) {
 
 /**
  * The celestiary sky for the abode. Starts when the abode is first drawn
- * (`seen(camera)`), and stands down to the procedural sky on any failure.
+ * (`seen(camera)`): on demand, so entering exo isn't slowed by it. Until its
+ * first frame the abode's sky is black (`pending`), and then fades in from
+ * black (`shownAt`); on any failure it stands down to the procedural sky.
  * @param {object} o
  * @param {THREE.WebGLRenderer} o.renderer
  * @param {{lat: number, lon: number}} o.site
@@ -155,7 +155,8 @@ export function makeCelestiarySky({ renderer, site, epochMs = Date.now(), search
   const scale = Math.min(2, Math.max(0.25, Number(params.get('sky_scale')) || SKY_SCALE))
   const stats = { status: 'idle', reason: null, origin: null, hello: null, views: 0, frames: 0, lastTimeMs: 0, latencyMs: 0, size: [0, 0] }
 
-  let seenAt = -Infinity, started = false, failed = false
+  let started = false, failed = false
+  let shownAt = null // when the first frame was drawn
   // The last camera that drew the abode, as it was then.
   let camera = null
   let net = null // { receiver, iframe, timers }
@@ -324,14 +325,14 @@ export function makeCelestiarySky({ renderer, site, epochMs = Date.now(), search
       keep(perf.long, { at: Math.round(now - perf.since), ms: Math.round(now - lastUpdate), sunAlt: Math.round(sunAltitude(timeMs, site) * 10) / 10 }, 100)
     }
     lastUpdate = now
-    if (!camera || failed) return
-    if (!started) { start(); return }
+    if (failed) return
+    if (!started) { if (camera) start(); return }
     if (!net || stats.status === 'connecting' || !isSkyHello(stats.hello)) return
     if (inFlight && now - inFlight.sentAt > RESEND_MS) inFlight = null // lost: ask again
     // Once the sky is in, the frame loop asks (request) for each frame's
     // camera; until then, this does, one view at a time.
     if (stats.status === 'sky') return
-    if (!inFlight && now - seenAt < IDLE_MS && !document.hidden) sendView(timeMs)
+    if (!inFlight && !document.hidden) sendView(timeMs)
   }
 
   /**
@@ -352,6 +353,7 @@ export function makeCelestiarySky({ renderer, site, epochMs = Date.now(), search
       renderer.resetState()
       renderer.setRenderTarget(target)
     }
+    shownAt ??= performance.now()
     keep(perf.drains, Math.round((performance.now() - t0) * 10) / 10)
     if (perfOn) {
       // The replay's GPU work too: a 1-pixel read waits for it (perf only: it stalls).
@@ -368,7 +370,6 @@ export function makeCelestiarySky({ renderer, site, epochMs = Date.now(), search
 
   /** Take the camera that draws the abode: a copy of its matrices. */
   function seen(cam) {
-    seenAt = performance.now()
     if (cam) camera = { matrixWorld: cam.matrixWorld.clone(), projectionMatrix: cam.projectionMatrix.clone() }
   }
 
@@ -406,9 +407,17 @@ export function makeCelestiarySky({ renderer, site, epochMs = Date.now(), search
     seen,
     /** The abode's time as Unix ms. */
     timeMs: (abodeTime) => epochMs + abodeTime * 1000,
-    /** Whether this frame should wait for the sky drawn for its camera: the sky on, and the abode drawn lately (in view). */
-    syncing() {
-      return on() && performance.now() - seenAt < IDLE_MS && !document.hidden
+    /** Whether celestiary's sky is still to come: not in yet, and not given up on. */
+    get pending() { return !failed && stats.status !== 'procedural' && !on() },
+    /** performance.now() when its first frame was drawn, or null. */
+    get shownAt() { return shownAt },
+    /**
+     * Whether this frame should wait for the sky drawn for its camera: the
+     * sky on, and the abode to be drawn this frame (`drawn`: the caller
+     * knows, from the camera's side and whether the doorway is in view).
+     */
+    syncing(drawn = true) {
+      return on() && drawn && !document.hidden
     },
     /**
      * Ask for the sky for the camera this frame draws the abode with (its

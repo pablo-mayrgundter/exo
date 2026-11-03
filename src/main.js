@@ -1145,7 +1145,7 @@ function frame() {
 
   // In sync, the abode's sky is drawn for this very camera first: ask for
   // it (the portal's virtual camera from the bar side), and hold the frame.
-  if (abode.sky?.syncing()) {
+  if (abode.sky?.syncing(viewSide === 1 || portal.visible(camera, viewSide))) {
     camera.updateMatrixWorld()
     const view = viewSide === 1 ? { matrixWorld: camera.matrixWorld, projectionMatrix: camera.projectionMatrix } : portal.viewFrom(camera, viewSide)
     held = { id: abode.sky.request(view.matrixWorld, view.projectionMatrix, abodeFrame.time), at: performance.now(), dt, now }

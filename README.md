@@ -85,15 +85,16 @@ by the community that gathers at [exo.cafe](https://exo.cafe).
     `sky.html`);
   - it draws your camera's view each frame, with its day, sunsets, air,
     clouds and stars, at the abode's ×600 time;
-  - until it's in, or if it can't be, the dusk is procedural;
+  - it loads when the arch first comes into view; the sky is black until
+    its first frame, which fades in; only if it can't come is the dusk
+    procedural;
   - Each frame waits for the sky drawn for its own camera (a sync render,
     as the portals are), at a pixel per CSS pixel as celestiary's own page
     draws; `?sky_scale=2` is a retina screen's own pixels.
   - It's drawn in place: celestiary's own final pass (its air, its tone
     map, its eye) replays straight into the frame the abode is drawn into,
     inside the abode or through the arch from the bar, and the abode goes
-    over it. There's no stand-in: until it's in, or if it can't be, the
-    dusk is exo's own.
+    over it. There's no stand-in.
   - `?sky=0` skips it; `?sky_meter=0` asks for its cheaper exposure.
   - Its clock slows from ×600 to ×60 through twilight, so dawn and dusk
     last and celestiary's eye keeps up.
