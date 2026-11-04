@@ -188,7 +188,11 @@ export function makeNetMap({ renderer, background, search = globalThis.location?
       // The window's frames in, and no street drawn last frame to have replayed them: on their own.
       if (!drained && guest.fresh.has('window')) guest.drainParts()
       drained = false
-      if (guest.stats.hello && isMapHello(guest.stats.hello)) {
+      const hello = guest.stats.hello
+      if (hello && isMapHello(hello) && !hello.capabilities?.parts) {
+        // An older netmap draws every view as its main one: the window's frames would land in the street.
+        if (ws.status !== 'plain') { ws.status = 'plain'; ws.reason = 'the guest draws no parts'; console.info(`[netmap] ${origin}'s map draws no parts; the gate stays a link`) }
+      } else if (hello && isMapHello(hello)) {
         if (ws.status === 'idle') ws.status = 'loading'
         const now = performance.now()
         if (inFlight && now - sentAt > RESEND_MS) send(now)
