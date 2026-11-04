@@ -12,7 +12,9 @@ export class Controls {
     this.pitch = 0.32
     this.dist = 6
     this.minDist = 2.2
-    this.maxDist = 2600
+    // Out to orbit: from 1.84 body units tall, past the die (~4,300 µm), up
+    // the map under it (netmap-ground.js) to the whole Earth.
+    this.maxDist = 3e12
     this.move = new THREE.Vector2() // touch joystick, -1..1
     this.enabled = true
     /** Whether a touch on the left half walks; main.js clears it on a stool or the Art Car. */

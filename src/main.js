@@ -19,6 +19,7 @@ import { SKY_HOLD_MS } from './world/celestiary-sky.js'
 import { PortalPair } from './world/portal.js'
 import { makeGate } from './world/gate.js'
 import { makeNetMapWindow } from './world/netmap-window.js'
+import { makeNetMapGround } from './world/netmap-ground.js'
 import { Avatar, TIERS, SIP } from './avatar/avatar.js'
 import { FaceTracker } from './avatar/face.js'
 import { Ledger, allocation } from './mist/ledger.js'
@@ -83,7 +84,8 @@ const abodeFrame = new Frame('Abode', { parent: wall, rate: () => abodeRateAt(ab
 // --- Scenes ---
 const world = new THREE.Scene()
 world.name = 'world'
-world.background = new THREE.Color(C.void)
+const voidColor = new THREE.Color(C.void)
+world.background = voidColor
 world.fog = new THREE.FogExp2(C.void, 0.0009 / BODY_UM)
 // Scene units are micrometres; everything in the street is built in body
 // units, so the scene's root carries the scale.
@@ -100,6 +102,11 @@ bar.group.add(jukebox.group)
 bar.colliders.push(jukebox.collider)
 // The gate to NetMap, with a live window onto it (netmap-window.js).
 const gate = makeGate({ netmap: makeNetMapWindow({ renderer }) })
+// NetMap under the chip, at true scale, out over the horizon (netmap-ground.js).
+const ground = makeNetMapGround({ renderer, background: voidColor })
+// Until the map's first frame the street is over the void; then it fades in from it.
+const veil = makeVeil(voidColor)
+world.add(veil.mesh)
 world.add(gate.group)
 const abode = makeAbode({ renderer })
 abodeRateAt = (t) => abode.rate(t)
@@ -109,7 +116,7 @@ const portal = new PortalPair(
   { width: 2.4, height: 3.2 })
 const scenes = [world, abode.scene]
 // From the bar, the abode's sky drawn in place in the doorway's target, under the abode.
-portal.underlay = (i, target) => i === 1 && !!abode.sky?.drawInto(target)
+portal.underlay = (i, target) => !!(i === 1 ? abode.sky?.drawInto(target) : ground.drawInto(target))
 let side = 0 // 0: the world (bar and street), 1: the abode: where the avatar is
 let viewSide = 0 // where the camera is: the side whose scene is drawn, the other seen through the arch
 
@@ -122,7 +129,7 @@ composer.addPass({
   enabled: true, needsSwap: false, renderToScreen: false,
   setSize() {}, dispose() {},
   render(r, _write, read) {
-    const under = viewSide === 1 && !!abode.sky?.drawInto(read)
+    const under = !!(viewSide === 1 ? abode.sky?.drawInto(read) : ground.drawInto(read))
     if (under) r.clear(false, true, true)
     renderPass.clear = !under
   },
@@ -842,7 +849,7 @@ controls.onClick = (e) => {
 }
 
 // A handle for tests and the console: ?debug
-if (params.has('debug')) window.exo = { get clock() { return clock }, p2p, voice, maxVoice, terminals, setView, barLife, sitDown, standUp, others, mist, vcpu, worker, car, life, show, mind, face, give, avatar, controls, bar, floor, abode, portal, gate, camera, renderer, ledger, presence, chipFrame, cafe, get side() { return side }, get viewSide() { return viewSide }, get tick() { return tick } }
+if (params.has('debug')) window.exo = { get clock() { return clock }, p2p, voice, maxVoice, terminals, setView, barLife, sitDown, standUp, others, mist, vcpu, worker, car, life, show, mind, face, give, avatar, controls, bar, floor, abode, portal, gate, camera, renderer, ledger, presence, chipFrame, cafe, get side() { return side }, get viewSide() { return viewSide }, ground, get tick() { return tick } }
 if (window.exo) window.exo.jukebox = jukebox
 
 // --- Loop ---
@@ -877,13 +884,14 @@ addEventListener('resize', () => {
 // What being here costs the main thread, as a share of a core: the work
 // of each frame over the time between frames.
 let busy = 0, span = 0
-// A frame held for the sky (celestiary-sky.js, sync): drawn once the sky
-// for its camera is in, or after SKY_HOLD_MS with the last one.
+// A frame held for the apps drawn in place in it (the abode's sky, the map
+// under the chip; inplace-guest.js): drawn once each one's frame for its
+// camera is in, or after SKY_HOLD_MS with the last ones.
 let held = null
 renderer.setAnimationLoop(() => {
   const t0 = performance.now()
   if (held) {
-    if (!abode.sky.ready(held.id) && t0 - held.at < SKY_HOLD_MS) return
+    if (!held.asks.every((a) => a.guest.ready(a.id)) && t0 - held.at < SKY_HOLD_MS) return
     draw(held.dt, held.now)
     held = null
   } else frame()
@@ -1137,18 +1145,36 @@ function frame() {
   // Looking from the bar at the avatar in the abode, you're inside the bar.
   if (viewSide === 0 && side === 1) bar.exterior.visible = false
   const viewUnit = unitOf(viewSide)
-  camera.near = (fpv ? 0.02 : 0.05) * viewUnit
+  // Zoomed out over the map the near plane goes with you, for the depth buffer's sake.
+  camera.near = (fpv ? 0.02 : Math.max(0.05, controls.dist * 0.002)) * viewUnit
   camera.far = Math.max(600, controls.dist * 4) * viewUnit
   camera.updateProjectionMatrix()
   if (touch) touchHud(button, freshPrompt)
   world.fog.density = (controls.dist > 60 ? 0.00008 : 0.0009) / BODY_UM
 
-  // In sync, the abode's sky is drawn for this very camera first: ask for
-  // it (the portal's virtual camera from the bar side), and hold the frame.
-  if (abode.sky?.syncing(viewSide === 1 || portal.visible(camera, viewSide))) {
-    camera.updateMatrixWorld()
-    const view = viewSide === 1 ? { matrixWorld: camera.matrixWorld, projectionMatrix: camera.projectionMatrix } : portal.viewFrom(camera, viewSide)
-    held = { id: abode.sky.request(view.matrixWorld, view.projectionMatrix, abodeFrame.time), at: performance.now(), dt, now }
+  // The apps drawn in place are drawn for this very frame's camera: ask
+  // each one this frame draws (its scene the camera's, or seen through the
+  // arch: the portal's virtual camera) for its frame, and hold the frame.
+  camera.updateMatrixWorld()
+  const sceneView = (k) => (viewSide === k ? { matrixWorld: camera.matrixWorld, projectionMatrix: camera.projectionMatrix } : portal.viewFrom(camera, viewSide))
+  const drawn = (k) => viewSide === k || portal.visible(camera, viewSide)
+  // The map loads the first time you're out on the street.
+  if (side === 0 && !bar.contains(pos.x, pos.z)) ground.start()
+  if (drawn(0)) ground.seen(sceneView(0))
+  ground.update()
+  veil.update(ground)
+  world.background = ground.on ? null : voidColor // three would clear the frame to it
+  const asks = []
+  if (abode.sky?.syncing(drawn(1))) {
+    const v = sceneView(1)
+    asks.push({ guest: abode.sky, id: abode.sky.request(v.matrixWorld, v.projectionMatrix, abodeFrame.time) })
+  }
+  if (ground.syncing(drawn(0))) {
+    const v = sceneView(0)
+    asks.push({ guest: ground, id: ground.request(v.matrixWorld, v.projectionMatrix) })
+  }
+  if (asks.length) {
+    held = { asks, at: performance.now(), dt, now }
     return
   }
   draw(dt, now)
@@ -1260,6 +1286,32 @@ function unitOf(sd) { return sd === 0 ? BODY_UM : 1 }
 function wrapAngle(a) { return Math.atan2(Math.sin(a), Math.cos(a)) }
 
 /** The Grid: an endless floor of lines under everything, centred on the camera. */
+/**
+ * The void the street was over, drawn over the map under it while the map
+ * fades in (netmap-ground.js), behind everything else: a full-screen quad
+ * at the far plane, depth-tested, so only what's of the map shows through.
+ */
+function makeVeil(color) {
+  const uniforms = { color: { value: color }, alpha: { value: 0 } }
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
+    uniforms, transparent: true, depthWrite: false, depthTest: true,
+    vertexShader: 'void main(){ gl_Position = vec4(position.xy, 0.99999, 1.0); }',
+    fragmentShader: 'uniform vec3 color; uniform float alpha; void main(){ gl_FragColor = vec4(color, alpha); }',
+  }))
+  mesh.frustumCulled = false
+  mesh.renderOrder = -10
+  mesh.visible = false
+  return {
+    mesh,
+    update(g) {
+      const t = g.on && g.shownAt !== null ? (performance.now() - g.shownAt) / GROUND_FADE_MS : 0
+      uniforms.alpha.value = 1 - THREE.MathUtils.smoothstep(t, 0, 1)
+      mesh.visible = g.on && uniforms.alpha.value > 0
+    },
+  }
+}
+const GROUND_FADE_MS = 1500
+
 function makeGrid() {
   const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShaderMaterial({
     transparent: true, depthWrite: false,

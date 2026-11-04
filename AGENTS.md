@@ -12,6 +12,7 @@ would otherwise rediscover.
 | What to build next, and where it fits | [docs/PLAN.md](./docs/PLAN.md): initiatives, epics, stories, tracks |
 | The chip | `src/chip/sim.js` (port of visual6502's chipsim; keep it node-for-node equal), `life.js`, `asm.js` |
 | Portals between apps | [pablo-mayrgundter/portal](https://github.com/pablo-mayrgundter/portal) (NetGL) |
+| How exo composites its parts (guests in place, doors, the plan) | [docs/PORTALS.md](./docs/PORTALS.md) |
 | Maps of the internet | [pablo-mayrgundter/netmap](https://github.com/pablo-mayrgundter/netmap) |
 
 ## Working efficiently
@@ -107,6 +108,10 @@ would otherwise rediscover.
   quick check without netmap, `test/fixtures/map-guest` speaks the same
   protocol (`npx vite test/fixtures/map-guest --host 127.0.0.1 --port …`).
   Other sessions on the machine may hold ports (5482 was); pick free ones.
+  The same build draws the map under the street (`exo.ground`, its `stats`
+  and `on`; it starts once the avatar is outside the bar), so one
+  `netmap_src` serves both; zoom out with `exo.controls.dist` (up to 3e12)
+  to see it.
   `exo.gate.netmap.stats` has `status` ('live' once a frame is in),
   `views`, `frames`, `costMs`; `exo.gate.netmap.target` is the render
   target (`renderer.readRenderTargetPixels` it for the window alone).
@@ -120,7 +125,7 @@ would otherwise rediscover.
   ({x: 0, f: 1})` from just inside it; setting the position is no
   crossing). `exo.side` is where the avatar is, `exo.viewSide` where the
   camera is (the scene drawn); in third person they part for a moment
-  each crossing. `exo.abode.sky.stats` has `status` ('sky' once a frame is
+  each crossing. `exo.abode.sky.stats` has `status` ('live' once a frame is
   in), `frames`, `latencyMs`; the abode's clock starts at `Date.now()`,
   so shift `Date.now` in an init script to see day or dusk. Its first
   frame takes 10–30 s on SwiftShader (the whole app boots).
