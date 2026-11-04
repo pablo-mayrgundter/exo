@@ -59,14 +59,14 @@ core.transport.onMessage((msg) => {
   globe.matrixWorldNeedsUpdate = true
   marks.geometry.setFromPoints((v.marks ?? []).map((m) => dir(m.lon, m.lat).multiplyScalar(1.01)))
   renderer.render(scene, camera)
-  core.endFrame({ viewId: msg.viewId })
+  core.endFrame(typeof msg.part === 'string' ? { viewId: msg.viewId, part: msg.part } : { viewId: msg.viewId })
 })
 core.announce({ position: [0, 0, 0], normal: [0, 0, 1], up: [0, 1, 0] })
 
 let acked = false
 const hello = () => {
   if (acked) return
-  core.transport.post({ type: 'layer:hello', version: 1, adapter: 'map-fixture', capabilities: { kinds: ['map'], frames: ['ecef'], views: ['globe-camera'], time: true }, units: { meters: 1 } })
+  core.transport.post({ type: 'layer:hello', version: 1, adapter: 'map-fixture', capabilities: { kinds: ['map'], frames: ['ecef'], views: ['globe-camera'], time: true, parts: true }, units: { meters: 1 } })
   setTimeout(hello, 500)
 }
 hello()

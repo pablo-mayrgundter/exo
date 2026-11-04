@@ -79,6 +79,7 @@ real computer, a bartender, and other people.*
 - **S1.2.3** As a visitor, I can feel the chip's timescale. ✅ (T6)
   - [x] HUD and the bar's CPU panel give kHz and τ against the native 1 MHz
   - [ ] 🔜 Slow-motion mode: step half-cycles and see one signal propagate
+  - [ ] 💭 Pulses along the traces (asked 2026-11-04, after The Orville's flatland city): points of light running along a trace when its node switches, from where the change came in. What the sim gives: a node's polygons (the path), the transistor whose gate turned it on or off and the recalc wave it switched in (`recalcNodeList`: each wave's changes are caused by the last wave's, a real order within a half-step), and how often each node toggles in a report (the rate). What it doesn't: a switch-level sim has no propagation *along* a wire (a node settles all at once), so the motion within a node is drawn: outward from its driving transistor along its traces by path length. At the avatar's size (1 : 220,000) and time scaled with it, a node's real RC delay (~1-10 ns) is under 2 ms, and a 1 MHz half-cycle about 0.1 s: the sim's ~2.6 kHz is already faster than the real chip would look to the avatar, so the pulses run at a pace chosen to read, a few per half-step, faded in the far field as the street's lights are. The worker would report per node its last toggle's source transistor and wave (sampled, not every half-step); the floor draws instanced sparks on precomputed trace skeletons
 
 ### E1.3 Max Pablo, bartender ✅ / 🔜
 - **S1.3.1** As a visitor, I'm greeted and get the lay of the land. ✅
@@ -209,6 +210,7 @@ the shape of the net.*
   - [x] Render-target portal with an oblique near plane; avatar and camera carried through the link
   - [x] The abode: temple plaza, a cyan spiral tree in the cobbles, candles on spirals, a dusk sky
   - [x] Its clock runs ×600: the stars wheel round about every 2.4 minutes
+  - [x] The doorway is a stencil, not a texture (`portal.js` `drawThrough`; docs/PORTALS.md): the door's silhouette into the stencil, the other side's in-place apps and scene drawn inside it for the doorway's camera, then the door's depth, and the camera's scene over it all. No second full-screen target or resample, and the other side composes as it does once you're through (in-place guests test the stencil themselves: `inplace-guest.js`)
 - **S3.1.2** As Pablo, my abode is my own app on my own site, linked in. 🔜 (T4)
   - [ ] Move the abode to pablo-mayrgundter.github.io; link it with NetGL as a cross-origin guest
   - [ ] Recursion: see the bar through the abode's arch through the bar's arch
@@ -235,11 +237,12 @@ the shape of the net.*
   - What you see from the street: the Gulf of Guinea, the equator and the prime meridian running off from under the chip to a horizon a few hundred metres off at camera height, and the network's links over it; zoomed out (now to orbit), the map round it, then the Earth.
   - [x] map.html: matrix views in ECEF beside its globe-camera views (netmap's `matrixView.js`): the host's camera exactly, a globe up to zoom 12 and a flat Web Mercator viewport centred under the camera above it, as deck's GlobeView switches, so it holds from 1 cm up; `?output=linear` decodes the frame from sRGB in a last pass, premultiplied
   - [x] In place under the street (`src/world/netmap-ground.js`): an in-place guest as the abode's sky is, now on one shared module (`inplace-guest.js`); exo's camera as a matrix view in ECEF on the sphere netmap's hello declares; replayed into the street's frame over its void, premultiplied; loaded the first time you're out on the street, fading in from the void; held for with the sky in one frame (`main.js`); through the arch from the abode too. The zoom reaches orbit (`controls.maxDist`), the near plane going with it. `?netmap_ground=0` leaves it out
-  - [ ] One netmap guest for the ground and the gate's window (portal-netgl's parts), not two loads (docs/PORTALS.md)
-  - [ ] Shared depth for the map (the drop needs exo's things in it), and `projection: geo | cyber | hybrid`
+  - [x] One netmap guest for the ground and the gate's window (`src/world/netmap.js`): one page, one deck, one download. The window's views are the guest's `window` part (map.html's `layer:view {part}`), replayed into the gate's target in the same drain as the ground's frame, at their own pace; netmap keeps each part's layers (hidden while another draws) and its render buffers per size, so switching costs no re-tessellation or reallocation
+  - [ ] Shared depth for the map: not needed while the visitor stays µm-sized (below), since the map is always behind everything exo draws (exo's far plane on the street is millimetres; the nearest map is the ground a body height down, already under the floor). Needed when something of exo's stands in the map (links arcing over the bar, or a landing place out in it): then the map writes exo's depth convention, or a log/reversed depth range split between them (docs/PORTALS.md)
+  - [ ] `projection: geo | cyber | hybrid`
   - [ ] The gate: pick a spot on its globe (exo inverts the view it sent: lon, lat, fit), marked; walk through and drop out of the sky over it
   - [ ] The landing place: a new side like the abode, its own frame (origin at the spot, floating), netmap drawn round it with exo's depth; a return gate to the street
-  - [ ] Open: the visitor's size there (the gate magnifies, as the abode's arch does ×224,000, or you stay µm-sized over a true-scale Earth), the drop's height, and what's underfoot (netmap's land and ocean)
+  - [ ] Open: the visitor's size there. For now (2026-11-04) no magnifying: you stay µm-sized (8.2 µm tall, 1 : 220,000 against 1.8 m) over a true-scale Earth. Being explored instead: **time scaled with size** (small time runs slow), so travel along links can be real-time at your scale. A traceroute hop of 5 ms is about 1,000 km of fibre; at ×220,000 it takes ~18 minutes of your time (~0.8 km/s, still 10⁸ body lengths a second). Open with it: the drop's height, and what's underfoot (netmap's land and ocean)
 - **S3.2.4** As a group, we pick where our room's server runs, on GeoNetMap, for least latency. (T5)
 
 ### E3.3 The sky: Celestiary 🚧 (T9, T4, T6)
@@ -375,6 +378,7 @@ the shape of the net.*
   should be useful work others accepted.
 - **Face privacy.** Blendshapes over the network reveal less than video
   but still identify; make it opt-in per room.
+- **Time and size.** If time runs in proportion to size (the avatar's 1 : 220,000), the 6502 at its real 1 MHz would look like ~4.5 Hz to the avatar, a 5 ms network hop would take ~18 minutes, and the abode (human scale) would run at our own clock. Which clocks does exo scale (the chip's, the links', the sky's, the visitors' conversation)? And how do two visitors at different sizes share a room?
 - **Hosting.** GitHub Pages is a cloud; Mist would self-host. Which parts
   go peer-to-peer first? (The MediaPipe runtime is already served from
   exo.cafe rather than a CDN; the face model still comes from Google.)

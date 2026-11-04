@@ -16,10 +16,9 @@ import { BODY_UM, BODY_PER_LAYOUT, CHIP_UNIT_UM, DIE_GEO, formatLength } from '.
 import { makeBar, BAR } from './world/bar.js'
 import { makeAbode, ABODE_RATE } from './world/abode.js'
 import { SKY_HOLD_MS } from './world/celestiary-sky.js'
-import { PortalPair } from './world/portal.js'
+import { PortalPair, DOOR_STENCIL } from './world/portal.js'
 import { makeGate } from './world/gate.js'
-import { makeNetMapWindow } from './world/netmap-window.js'
-import { makeNetMapGround } from './world/netmap-ground.js'
+import { makeNetMap } from './world/netmap.js'
 import { Avatar, TIERS, SIP } from './avatar/avatar.js'
 import { FaceTracker } from './avatar/face.js'
 import { Ledger, allocation } from './mist/ledger.js'
@@ -100,10 +99,12 @@ world.add(bar.group)
 const jukebox = makeJukebox({ position: [-7.9, -6.2], rotation: 0.35, note, touch }) // the north-west corner, by the back bar
 bar.group.add(jukebox.group)
 bar.colliders.push(jukebox.collider)
-// The gate to NetMap, with a live window onto it (netmap-window.js).
-const gate = makeGate({ netmap: makeNetMapWindow({ renderer }) })
-// NetMap under the chip, at true scale, out over the horizon (netmap-ground.js).
-const ground = makeNetMapGround({ renderer, background: voidColor })
+// NetMap: one guest for the map under the chip, at true scale, out over the
+// horizon (netmap-ground.js), and the gate's live window onto it
+// (netmap-window.js; netmap.js).
+const netmap = makeNetMap({ renderer, background: voidColor })
+const ground = netmap.ground
+const gate = makeGate({ netmap: netmap.window })
 // Until the map's first frame the street is over the void; then it fades in from it.
 const veil = makeVeil(voidColor)
 world.add(veil.mesh)
@@ -115,24 +116,55 @@ const portal = new PortalPair(
   { scene: abode.scene, anchor: abode.portalAnchor },
   { width: 2.4, height: 3.2 })
 const scenes = [world, abode.scene]
-// From the bar, the abode's sky drawn in place in the doorway's target, under the abode.
-portal.underlay = (i, target) => !!(i === 1 ? abode.sky?.drawInto(target) : ground.drawInto(target))
+// Through the arch, the other side's apps drawn in place under it, inside the door's stencil.
+portal.underlay = (i, target) => !!(i === 1 ? abode.sky?.drawInto(target, { stencil: DOOR_STENCIL }) : ground.drawInto(target, { stencil: DOOR_STENCIL }))
+portal.backdrops[0] = voidColor // the map goes over the street's void
 let side = 0 // 0: the world (bar and street), 1: the abode: where the avatar is
 let viewSide = 0 // where the camera is: the side whose scene is drawn, the other seen through the arch
 
 // --- Post: bloom, the Tron glow ---
-const composer = new EffectComposer(renderer)
+// Its targets have a stencil: the arch's doorway is drawn by it (portal.js).
+const composerTarget = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, stencilBuffer: true })
+composerTarget.texture.name = 'EffectComposer.rt1'
+const composer = new EffectComposer(renderer, composerTarget)
+composer.setSize(innerWidth, innerHeight)
 const renderPass = new RenderPass(world, camera)
-// In the abode, celestiary's sky drawn in place first (celestiary-sky.js
-// drawInto), and the abode over it, its depth cleared, no colour clear.
+// Whose avatar stands in for it this frame, while it straddles the arch (draw).
+const ghost = { door: false, scene: false }
+// What's under the camera's scene first: its apps drawn in place (the
+// abode's sky, celestiary-sky.js; the map under the street,
+// netmap-ground.js), then the other side through the arch, inside the
+// door's stencil (portal.js), then the scene over both, its depth cleared,
+// with no colour clear.
 composer.addPass({
   enabled: true, needsSwap: false, renderToScreen: false,
   setSize() {}, dispose() {},
   render(r, _write, read) {
     const under = !!(viewSide === 1 ? abode.sky?.drawInto(read) : ground.drawInto(read))
     if (under) r.clear(false, true, true)
-    renderPass.clear = !under
+    let door = false
+    if (portal.visible(camera, viewSide)) {
+      if (!under) {
+        // Cleared as the scene's render would have, to its background.
+        const bg = scenes[viewSide].background
+        const was = { c: r.getClearColor(new THREE.Color()), a: r.getClearAlpha() }
+        if (bg?.isColor) r.setClearColor(bg, 1)
+        r.setRenderTarget(read)
+        r.clear(true, true, true)
+        r.setClearColor(was.c, was.a)
+      }
+      door = withGhost(ghost.door, () => portal.drawThrough(r, camera, viewSide, read))
+    }
+    renderPass.clear = !under && !door
   },
+})
+const renderScene = renderPass.render.bind(renderPass)
+renderPass.render = (...a) => withGhost(ghost.scene, () => {
+  // Over the door drawn already: a colour background would have three
+  // clear the frame whatever autoClear says (the first pass cleared to it).
+  const scene = renderPass.scene, background = scene.background
+  if (!renderPass.clear) scene.background = null
+  try { renderScene(...a) } finally { scene.background = background }
 })
 composer.addPass(renderPass)
 const BLOOM_THRESHOLD = 0.22
@@ -849,7 +881,7 @@ controls.onClick = (e) => {
 }
 
 // A handle for tests and the console: ?debug
-if (params.has('debug')) window.exo = { get clock() { return clock }, p2p, voice, maxVoice, terminals, setView, barLife, sitDown, standUp, others, mist, vcpu, worker, car, life, show, mind, face, give, avatar, controls, bar, floor, abode, portal, gate, camera, renderer, ledger, presence, chipFrame, cafe, get side() { return side }, get viewSide() { return viewSide }, ground, get tick() { return tick } }
+if (params.has('debug')) window.exo = { get clock() { return clock }, p2p, voice, maxVoice, terminals, setView, barLife, sitDown, standUp, others, mist, vcpu, worker, car, life, show, mind, face, give, avatar, controls, bar, floor, abode, portal, gate, netmap, camera, renderer, ledger, presence, chipFrame, cafe, get side() { return side }, get viewSide() { return viewSide }, ground, get tick() { return tick } }
 if (window.exo) window.exo.jukebox = jukebox
 
 // --- Loop ---
@@ -1180,16 +1212,18 @@ function frame() {
   draw(dt, now)
 }
 
-// The camera's side is drawn, the other through the arch. An avatar
-// straddling the doorway is drawn on both sides: its own scene has it, and
-// a ghost carried through the link stands in the other for that render. The
-// door's surface hides whatever of either lies behind its plane, so they
-// meet at the door.
+// The camera's side is drawn, the other through the arch, inside the
+// door's stencil (the composer's first pass). An avatar straddling the
+// doorway is drawn on both sides: its own scene has it, and a ghost carried
+// through the link stands in the other for that render. The door's depth
+// hides whatever of either lies behind its plane, so they meet at the door.
 function draw(dt, now) {
   const straddling = straddles()
-  withGhost(straddling && viewSide === side, () => portal.render(renderer, camera, viewSide, now))
+  portal.update(camera, viewSide, now)
+  ghost.door = straddling && viewSide === side
+  ghost.scene = straddling && viewSide !== side
   renderPass.scene = scenes[viewSide]
-  withGhost(straddling && viewSide !== side, () => composer.render(dt))
+  composer.render(dt)
 }
 
 /** Whether the avatar is within reach of its side's doorway: some of it may be through. */
@@ -1211,7 +1245,7 @@ function withGhost(on, fn) {
   g.matrixAutoUpdate = false
   g.matrix.copy(m)
   g.matrixWorldNeedsUpdate = true
-  try { fn() } finally {
+  try { return fn() } finally {
     home.add(g)
     g.matrixAutoUpdate = true
     g.updateMatrix()

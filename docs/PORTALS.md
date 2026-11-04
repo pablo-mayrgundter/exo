@@ -10,13 +10,13 @@ should put them all together.*
 | Part | Where it comes from | How it's put in the frame |
 |---|---|---|
 | 1. Exo Cafe (the bar, Max, the avatars) | exo's own scene graph | drawn by exo, the host |
-| 2. The abode | exo's own scene graph, another scene | rendered into a texture for the doorway's surface (`portal.js`), or drawn directly once you're through |
+| 2. The abode | exo's own scene graph, another scene | **through a stencil**: drawn straight into the frame inside the doorway's silhouette (`portal.js` `drawThrough`), or drawn directly once you're through |
 | 3. The abode's sky | celestiary's `sky.html`, a NetGL guest | **in place**: replayed into the abode's framebuffer, under the abode (`inplace-guest.js`, `celestiary-sky.js`) |
 | 4. The chip | exo's own: the 6502 in a worker (`chip/sim.js`), its floor (`chipfloor.js`) | drawn by exo, the street's ground |
 | 5. NetMap over the chip's horizon | netmap's `map.html`, a NetGL guest | **in place**: replayed into the street's framebuffer, under the street (`netmap-ground.js`) |
-| 6. NetMap framed at the gate | netmap's `map.html` again, a second guest | replayed into a render target, a texture on the gate's window (`netmap-window.js`) |
+| 6. NetMap framed at the gate | the same guest as 5, its `window` part (`netmap.js`) | replayed into a render target, a texture on the gate's window (`netmap-window.js`), in the same drain as 5 |
 
-Two of the six (3 and 5) now go through one path. For each frame:
+Two of the six (3 and 5) go through one path. For each frame:
 1. exo sends the guest the camera it draws that scene with, as a matrix view
    in a frame they agree on: the equator of date for the sky, ECEF for the map;
 2. it holds the frame until that camera's frame is in (at most 250 ms);
@@ -50,21 +50,27 @@ it needs from exo, the visitor's body drawn in it and the way back, is the
 same as what any guest place would need. So the protocol should carry that
 first.
 
-For now it stays a scene in exo's page. Its doorway is the one piece of
-compositing that still goes through a texture: the other side is rendered
-into a target, sampled on the door's surface by screen position, with an
-oblique near plane.
+For now it stays a scene in exo's page. Its doorway was the last piece of
+compositing through a texture (the other side rendered into a target and
+sampled on the door's surface by screen position). It is a stencil now
+(`portal.js` `drawThrough`, in the composer's first pass):
+1. the door's silhouette into the stencil buffer, whatever is in front of
+   it;
+2. inside it, the other side's depth cleared (and its background filled),
+   its in-place layers drawn (the abode's sky from the bar, the map from
+   the abode), their depth cleared, then its scene, for the doorway's
+   camera with its oblique near plane, every draw kept to the stencil;
+3. the door's own depth written there;
+4. the camera's scene drawn over it all with no clear: in front of the
+   door it shows, behind it the door's depth hides it.
 
-The texture should go. Instead:
-- draw the door's shape into the stencil buffer;
-- draw the other side straight into the frame inside it, with its own
-  in-place layers (its sky);
-- clear depth inside the stencil.
-
-That is the same screen policy portal-netgl applies to a guest drawn
-through a door (`stencil: {ref}`). It drops a full-screen target and a
-resample, and the abode through the door then composes exactly as the
-abode around you.
+The in-place guests test the stencil themselves: portal-netgl's screen
+policy `stencil: {ref}`, which every in-place guest now has, EQUAL 0 over
+a frame cleared for it and EQUAL 1 through the door (`inplace-guest.js`
+`drawInto(target, colour, {stencil})`). The rim's shimmer is what the
+camera's scene draws of the door, once a pixel (it counts in the
+stencil). There's no full-screen target or resample any more, and the
+abode through the door composes exactly as the abode around you.
 
 The camera crossing on its own side (`viewSide`) and the avatar's ghost
 while straddling the door stay as they are.
@@ -114,8 +120,8 @@ Next:
   you stand in the map after the drop through the gate, the map and exo's
   drawing need one depth: the map writing exo's depth convention, or one
   depth range split between them.
-- **One netmap, not two.** Today netmap is loaded twice: here, and for the
-  gate's window (6). See below.
+- **One netmap, not two.** Done: one guest draws this and the gate's
+  window (6). See below.
 - **Its projections.** geo now; cyber and hybrid are netmap's layouts on the
   same surface, a parameter of the view.
 
@@ -126,11 +132,20 @@ world. So a texture is the right composition for it, unlike the doorway. It
 is a second view of the same app as part 5, though, and it loads a second
 copy of netmap (a second deck, a second network download).
 
-It should be one guest with two views. portal-netgl's parts already allow
-this: several draws for one view, each to its own target, with `part` on the
-frame-end and `beforeFrame` on the receiver.
-- The in-place map is drawn every frame, for the camera.
-- The gate's globe is drawn at its own pace, into its target.
+It is one guest with two views now (`netmap.js`), on portal-netgl's parts:
+each draw tagged with a `part` on its frame-end, and `beforeFrame` on the
+receiver picking each one's target.
+- The in-place map is drawn every frame that draws the street, for its
+  camera: the main view, the one the frame holds for.
+- The gate's globe is drawn at its own pace (its cost timed now and then,
+  against the ground's own drains), as `layer:view {part: 'window'}`, into
+  its target, in the same drain as the ground. When the street isn't
+  drawn, its frames are replayed on their own.
+
+netmap draws each view as its own frame, and keeps each part's layers
+(hidden while the other draws) and its post-process buffers per size, so
+switching between the two costs no re-tessellation or reallocation. Its
+`resize` sets deck's own size too, which otherwise lags a view behind.
 
 One guest also makes the drop through the gate simple. The globe you pick a
 spot on and the map you fall into are the same netmap, with the same data
@@ -177,7 +192,25 @@ What exo should converge on:
    `inplace-guest.js` is that now.
 
 Steps, in order:
-- netmap as one guest with two views (5 and 6);
-- the doorway by stencil, the abode's layers drawn into the frame;
-- shared depth for the map, which the drop through the gate needs;
+- ✅ netmap as one guest with two views (5 and 6);
+- ✅ the doorway by stencil, the abode's layers drawn into the frame;
+- shared depth for the map, which the drop through the gate needs (below);
 - the chip's floor and the cafe behind the same layer interface.
+
+### Shared depth, and why it waits
+
+While the visitor stays µm-sized (no magnifying at the gate, 2026-11-04),
+the map is always behind everything exo draws. Everything exo draws is
+the die (4 mm across) and what stands on it, lying on the map's ground,
+and the nearest of the map is that ground itself, under the chip's floor.
+From the street or from orbit, nothing of the map is ever in front of
+exo's drawing, so "under, depth cleared" composes it correctly, and a
+shared depth would buy nothing yet.
+
+It's needed once exo draws something out in the map: links arcing up over
+the bar at true scale, or a landing place after the drop. Then the two
+need one depth: exo's projection sent with the view (it is: the matrix
+view's projection) and the map writing that depth convention, which needs
+a logarithmic or reversed-Z depth on both sides to hold µm and 10⁷ m in
+one buffer; or the depth range split, exo's near part and the map's far
+part, each drawn into its slice.

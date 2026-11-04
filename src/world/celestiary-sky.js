@@ -208,9 +208,9 @@ export function makeCelestiarySky({ renderer, site, epochMs = Date.now(), search
     if (!guest.on && !guest.inFlight && camera && !document.hidden) guest.view(body(timeMs))
   }
 
-  function drawInto(target) {
+  function drawInto(target, opts) {
     const t0 = performance.now()
-    const drew = guest.drawInto(target)
+    const drew = guest.drawInto(target, null, opts)
     if (drew && perfOn) {
       // The replay's GPU work too: a 1-pixel read waits for it (perf only: it stalls).
       renderer.readRenderTargetPixels(target, 0, 0, 1, 1, new (target.texture.type === THREE.HalfFloatType ? Uint16Array : Uint8Array)(4))

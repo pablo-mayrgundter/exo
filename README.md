@@ -111,7 +111,9 @@ by the community that gathers at [exo.cafe](https://exo.cafe).
   from under the chip to the horizon, with the network over it; zoom out
   and the map spreads round the die, out to the whole Earth. NetMap draws
   it in place, under the street, for exo's own camera
-  (`src/world/netmap-ground.js`; `?netmap_ground=0` leaves it out). How
+  (`src/world/netmap-ground.js`; `?netmap_ground=0` leaves it out), and
+  the same NetMap draws the gate's globe: one page, loaded once
+  (`src/world/netmap.js`). How
   exo puts its parts together, and which should be apps of their own:
   [docs/PORTALS.md](docs/PORTALS.md).
 

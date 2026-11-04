@@ -112,9 +112,15 @@ would otherwise rediscover.
   and `on`; it starts once the avatar is outside the bar), so one
   `netmap_src` serves both; zoom out with `exo.controls.dist` (up to 3e12)
   to see it.
-  `exo.gate.netmap.stats` has `status` ('live' once a frame is in),
-  `views`, `frames`, `costMs`; `exo.gate.netmap.target` is the render
-  target (`renderer.readRenderTargetPixels` it for the window alone).
+  One guest draws both (`exo.netmap`: `guest`, `ground`, `window`; the
+  gate's views are its `window` part), so there's one netmap iframe.
+  `exo.netmap.window.stats` (also `exo.gate.netmap.stats`) has `status`
+  ('live' once a frame is in), `views`, `frames`, `drains`, `costMs`;
+  its `target` is the render target (`renderer.readRenderTargetPixels` it
+  for the window alone). The window paces itself to its cost (~0.6 s a
+  frame on SwiftShader: a view every few seconds), so wait on a few
+  frames, not many. Write a Playwright script's output to a file, not a
+  pipe: a `timeout` that kills node loses what was piped.
   Stand in front of the gate in first person: `exo.setView('first')`,
   avatar at `(9 − 0.479·7, 0, 22 + 0.878·7)`, `controls.yaw = −0.5`.
   For the sky, build celestiary (celestiary/web: `CESIUM_ION_TOKEN= yarn
@@ -146,6 +152,15 @@ would otherwise rediscover.
   SwiftShader most are. Read it inside the draw: wrap `exo.renderer.render`
   and call `toDataURL()` after the render whose target is null (the output
   pass).
+- **The arch is a stencil** (`portal.js` `drawThrough`): the composer's
+  targets have a stencil buffer, and the other side is drawn inside the
+  door's silhouette before the camera's scene. three clears the whole
+  frame for a scene whose `background` is a colour, whatever `autoClear`
+  says, so anything drawn over what's already in the frame holds the
+  background back while it renders (main.js and portal.js do). To A/B a
+  rendering change against main, build main in a worktree in the
+  scratchpad (`git worktree add …`, link `node_modules`) and serve its
+  `dist` on another port.
 - **Element ids are global.** The canvas is `#view` (and styled full
   screen); a control named the same quietly becomes the canvas. Check
   `index.html` before naming a new element.

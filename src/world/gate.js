@@ -1,8 +1,9 @@
 // The gate to NetMap, on the street outside the bar's door: a green ring
 // with a cyan one turning inside it, and a neon sign. E there jacks into
 // NetMap in a new tab. Inside the ring is a window onto NetMap itself, live
-// (netmap-window.js), once its guest draws; until then, or if it can't, the
-// ring is empty, as it always was.
+// (netmap-window.js, one of the two views of netmap's guest, netmap.js),
+// once it draws; until then, or if it can't, the ring is empty, as it
+// always was.
 import * as THREE from 'three'
 import { C } from '../theme.js'
 import { neonTexture, FONT_MONO } from './textures.js'
@@ -12,7 +13,7 @@ const RING_Y = 2.7
 const SCREEN_R = 2.17
 
 /**
- * @param {{netmap?: ReturnType<import('./netmap-window.js').makeNetMapWindow>}} [o]
+ * @param {{netmap?: ReturnType<import('./netmap.js').makeNetMap>['window']}} [o]
  */
 export function makeGate({ netmap = null } = {}) {
   const group = new THREE.Group()
@@ -32,11 +33,12 @@ export function makeGate({ netmap = null } = {}) {
 
   if (netmap) {
     // The globe fills the ring's disc; the window's square corners fall
-    // outside it. The guest's pixels are display-referred and premultiplied
-    // (deck blends onto a clear, transparent frame), so they're decoded to
-    // linear here and laid over the street as they are.
+    // outside it. The guest's pixels are premultiplied (deck blends onto a
+    // clear, transparent frame), and linear (map.html?output=linear); from
+    // a guest that only writes display colours they're decoded here. Then
+    // they're laid over the street as they are.
     const screen = new THREE.Mesh(new THREE.CircleGeometry(SCREEN_R, 64), new THREE.ShaderMaterial({
-      uniforms: { ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog), map: { value: netmap.texture } },
+      uniforms: { ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog), map: { value: netmap.texture }, uLinear: { value: 1 } },
       vertexShader: /* glsl */`
         #include <fog_pars_vertex>
         varying vec2 vUv;
@@ -49,11 +51,12 @@ export function makeGate({ netmap = null } = {}) {
       fragmentShader: /* glsl */`
         #include <fog_pars_fragment>
         uniform sampler2D map;
+        uniform float uLinear;
         varying vec2 vUv;
         vec3 srgbToLinear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c)); }
         void main() {
           vec4 s = texture2D(map, vUv);
-          gl_FragColor = vec4(s.a > 0.0 ? srgbToLinear(s.rgb / s.a) * s.a : vec3(0.0), s.a);
+          gl_FragColor = uLinear > 0.5 ? s : vec4(s.a > 0.0 ? srgbToLinear(s.rgb / s.a) * s.a : vec3(0.0), s.a);
           #ifdef USE_FOG
             // three's fog_fragment, premultiplied: the clear corners stay clear.
             #ifdef FOG_EXP2
@@ -89,6 +92,7 @@ export function makeGate({ netmap = null } = {}) {
     if (netmap) {
       netmap.update()
       g.screen.visible = netmap.on
+      g.screen.material.uniforms.uLinear.value = netmap.linear ? 1 : 0
     }
   }
   return g
