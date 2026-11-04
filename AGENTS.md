@@ -164,10 +164,23 @@ would otherwise rediscover.
 - **The chip floor's pulses** start once the worker's `sites` message is in
   (a few hundred ms after init) and then come with each tick
   (`exo.floor.setPulses`); `?pulses=0` leaves them out, to A/B a frame.
-  To look at the middle of the die, take the floor's bounds from its
-  geometry (`exo.floor.group.children[1].geometry.boundingBox`, body units:
-  about −20…857 × −19…943) rather than guessing a position: the street
-  outside the bar is at its corner, and little switches there.
+  To look at the middle of the die, take its bounds (`exo.floor.bounds`,
+  body units: about −20…857 × −19…943) rather than guessing a position: the
+  street outside the bar is at its corner, and little switches there.
+- **The floor is in depth** (`chip/stack.js`): the street (metal's top) is
+  at y 0.07, the silicon 0.67 below. `exo.floor.heightAt(x, z)` is what you
+  stand on; main.js's `walkTheDie` applies gravity, steps and walls, so an
+  avatar set at any y settles onto the floor under it. To test a jump, set
+  `exo.controls.input` to walk and add `'Space'` to `exo.controls.keys`.
+  The die is a slab 380 µm thick (`exo.floor.slab`: its extent, `top`,
+  `bottom` at y −85.7) standing on the map's ground; off it `heightAt` is
+  the ground, so a walk off the edge falls ~4 s. Walking speed scales with
+  `controls.dist` (×10 at 250), so reset the zoom before a walking test.
+- **Coplanar layers fight.** Diffusion's polygons are flush with each other
+  and with the slab's face, so they're painted in order with no depth
+  writes (and a polygon offset toward the camera) over a face sunk 0.03
+  below them. Anything else drawn flush on the die needs the same, or it
+  stripes on real GPUs (on SwiftShader the face just wins).
 - **Element ids are global.** The canvas is `#view` (and styled full
   screen); a control named the same quietly becomes the canvas. Check
   `index.html` before naming a new element.

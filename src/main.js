@@ -14,6 +14,7 @@ import { buildVcpu } from './chip/vcpu.js'
 import { makeChipFloor } from './world/chipfloor.js'
 import { BODY_UM, BODY_PER_LAYOUT, CHIP_UNIT_UM, DIE_GEO, formatLength } from './cosmic/units.js'
 import { makeBar, BAR } from './world/bar.js'
+import { DIE_BASE_Y } from './chip/stack.js'
 import { makeAbode, ABODE_RATE } from './world/abode.js'
 import { SKY_HOLD_MS } from './world/celestiary-sky.js'
 import { PortalPair, DOOR_STENCIL } from './world/portal.js'
@@ -790,7 +791,25 @@ function interact() {
   if (free >= 0) { sitDown(free); return }
   if (p.distanceTo(car.group.position) < 4.5) { board(); return }
   if (gate.near) { openNetMap(); return }
+  if (besideDie()) { climbDie(); return }
   if (p.distanceTo(bar.max.group.position) < 7) give('max')
+}
+/** Whether you're on the ground by the die's foot: E climbs back up. */
+function besideDie() {
+  const p = avatar.group.position, s = floor.slab
+  if (p.y > s.bottom + 1 || floor.onDie(p.x, p.z)) return false
+  const dx = Math.max(s.x0 - p.x, 0, p.x - s.x1), dz = Math.max(s.z0 - p.z, 0, p.z - s.z1)
+  return Math.hypot(dx, dz) < 6
+}
+/** Up the die's side, onto its face just inside the edge (380 µm of silicon: no jump does it). */
+function climbDie() {
+  const p = avatar.group.position, s = floor.slab
+  p.x = THREE.MathUtils.clamp(p.x, s.x0 + 0.5, s.x1 - 0.5)
+  p.z = THREE.MathUtils.clamp(p.z, s.z0 + 0.5, s.z1 - 0.5)
+  p.y = floor.heightAt(p.x, p.z)
+  fall = 0
+  grounded = true
+  note('Back up on the die: 380 µm of silicon.')
 }
 /** Remote visitors sitting at the bar. */
 function seatedOthers() {
@@ -909,6 +928,13 @@ document.addEventListener('visibilitychange', () => {
 })
 let promptText = null, promptSince = 0
 const prevPos = new THREE.Vector3()
+// Walking the die in depth: gravity (body units/s², a body unit being about
+// a metre to a visitor), what you step up without a jump (from the silicon
+// onto poly, from poly onto metal: 1.5 µm, 0.34 units), and a jump's speed
+// (Space: up onto metal from the silicon, 3 µm, and a little over).
+const GRAVITY = 10, STEP_UP = 0.36, JUMP = 4.2
+let fall = 0 // vertical speed, body units/s
+let grounded = true
 const meAt = new THREE.Vector3() // your world position, for the jukebox
 const fwd = new THREE.Vector3(), right = new THREE.Vector3()
 
@@ -965,6 +991,7 @@ function frame() {
   prevPos.copy(pos)
   pos.addScaledVector(vel, dt)
   if (!seatedNow) collide(pos, side === 0 ? bar.colliders : abode.colliders)
+  if (side === 0 && !seatedNow && !riding) walkTheDie(dt)
   car.update(dt)
   if (seatedNow) {
     // Looking around from the stool: the head turns, the body follows a
@@ -1047,7 +1074,7 @@ function frame() {
   gate.update(now, side === 0 ? pos : null)
   const nearCar = side === 0 && pos.distanceTo(car.group.position) < 4.5
   const nearSeat = side === 0 && !seatedNow && !riding && barLife.freeSeatNear(pos, takenSeats()) >= 0
-  const action = riding ? 'step off the Art Car' : seatedNow ? 'stand up' : nearSeat ? 'sit' : nearCar ? 'ride the Art Car' : gate.near ? 'jack into NetMap' : null
+  const action = riding ? 'step off the Art Car' : seatedNow ? 'stand up' : nearSeat ? 'sit' : nearCar ? 'ride the Art Car' : gate.near ? 'jack into NetMap' : besideDie() ? 'climb back up the die' : null
   const tip = seatedNow && barLife.mine(barLife.seat) ? 'Click the glass to drink' : null
   const { text: prompt, button } = promptFor({ action, tip }, touch)
   // The prompt shows in the middle for a few seconds, then docks in the
@@ -1233,6 +1260,35 @@ function draw(dt, now) {
   composer.render(dt)
 }
 
+/**
+ * The street in depth (chip/stack.js): stand on the topmost layer under your
+ * feet, fall off its edges, step up what's knee-high, and jump (Space) up
+ * the rest; a slab too high to step onto is a wall. In the bar, its floor.
+ * (Others' avatars are drawn where their own pages put them.)
+ */
+function walkTheDie(dt) {
+  const pos = avatar.group.position
+  const groundAt = (x, z) => (bar.contains(x, z) ? BAR.floor : floor.heightAt(x, z))
+  // A wall: too high to step onto from here, and not jumped over. On a
+  // touch screen, with no Space, walking into one a jump clears jumps.
+  if (groundAt(pos.x, pos.z) - pos.y > STEP_UP) {
+    if (touch && grounded && groundAt(pos.x, pos.z) - pos.y < JUMP * JUMP / (2 * GRAVITY)) { fall = JUMP; grounded = false }
+    if (groundAt(pos.x, prevPos.z) - pos.y <= STEP_UP) pos.z = prevPos.z
+    else if (groundAt(prevPos.x, pos.z) - pos.y <= STEP_UP) pos.x = prevPos.x
+    else { pos.x = prevPos.x; pos.z = prevPos.z }
+  }
+  const ground = groundAt(pos.x, pos.z)
+  if (grounded && controls.keys.has('Space') && entered) { fall = JUMP; grounded = false }
+  if (grounded && pos.y - ground > 0.01) grounded = false // walked off an edge
+  if (!grounded) {
+    fall -= GRAVITY * dt
+    pos.y += fall * dt
+    if (pos.y <= ground) { pos.y = ground; fall = 0; grounded = true }
+  } else {
+    pos.y = ground // on the level, or a step up
+  }
+}
+
 /** Whether the avatar is within reach of its side's doorway: some of it may be through. */
 function straddles() {
   const anchor = side === 0 ? bar.portalAnchor : abode.portalAnchor
@@ -1370,6 +1426,7 @@ function makeGrid() {
   }))
   m.rotation.x = -Math.PI / 2
   m.scale.setScalar(20000)
+  m.position.y = DIE_BASE_Y - 0.01 // on the ground, where the die stands
   m.renderOrder = -3
   return m
 }

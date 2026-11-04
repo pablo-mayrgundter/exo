@@ -15,11 +15,13 @@
 // real node settles in well under a millisecond.
 import * as THREE from 'three'
 import { C } from '../theme.js'
+import { layerY, SILICON_Y, DIE_BASE_Y } from '../chip/stack.js'
 
 
 // visual6502's layers: 0 metal, 1 switched diffusion, 2 input diode,
-// 3 grounded diffusion, 4 powered diffusion, 5 polysilicon.
-const LAYER_Y = [0.06, 0.02, 0.02, 0.02, 0.02, 0.04]
+// 3 grounded diffusion, 4 powered diffusion, 5 polysilicon. Each stands at
+// its height in the process's stack (chip/stack.js): the metal's top is the
+// street, the silicon a third of a visitor's height below it.
 const LAYER_HI = [C.cyan, C.yellow, C.yellow, C.green, C.orange, C.magenta]
 const LAYER_LO = [0x0c2a4a, 0x2a2208, 0x2a2208, 0x0b2a12, 0x2a0d08, 0x26082a]
 /**
@@ -46,32 +48,51 @@ export function makeChipFloor(data, frame, { unit = 1 } = {}) {
   const pulseTex = new THREE.DataTexture(pulses, texW, 1, THREE.RGBAFormat, THREE.FloatType)
   pulseTex.needsUpdate = true
 
-  const fillPos = [], fillNode = [], fillLayer = []
+  // Every polygon a slab, at its layer's height and thickness: its top, its
+  // walls and (for poly and metal, which you can stand under) its
+  // underside, shaded so the slabs read as solid. Diffusion is the
+  // silicon's own face, flat. Metal, on top and everywhere, goes in a mesh
+  // of its own, drawn see-through after the rest.
+  const solid = { pos: [], node: [], layer: [], shade: [] }
+  // Diffusion is the silicon's own face, its polygons flush and overlapping:
+  // painted in order, with no depth of their own, or they'd fight each
+  // other and the face for every pixel.
+  const diff = { pos: [], node: [], layer: [], shade: [] }
+  const metal = { pos: [], node: [], layer: [], shade: [] }
   const edgePos = [], edgeNode = [], edgeLayer = []
-  // One draw call, painted in buffer order: diffusion, then poly, then
-  // metal on top, as on the die.
-  const ORDER = [6, 0, 1, 2, 3, 4] // per layer: metal last
-  const segs = [...data.segdefs].sort((a, b) => ORDER[a[2]] - ORDER[b[2]])
-  for (const s of segs) {
+  const SHADE = { top: 1, wall: 0.6, under: 0.4 }
+  const tri = (m, a, b, c, node, layer, shade) => {
+    m.pos.push(...a, ...b, ...c)
+    m.node.push(node, node, node)
+    m.layer.push(layer, layer, layer)
+    m.shade.push(shade, shade, shade)
+  }
+  let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity
+  for (const s of data.segdefs) {
     const [node, , layer] = s
     const c = s.slice(3)
     const pts = []
     for (let i = 0; i < c.length; i += 2) {
       const [x, , z] = frame.toParent([c[i], c[i + 1], 0])
       pts.push(new THREE.Vector2(x, z))
+      x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z)
     }
     if (pts.length < 3) continue
-    const y = LAYER_Y[layer]
+    const m = layer === 0 ? metal : layer === 5 ? solid : diff
+    const [yb, yt] = layerY(layer)
+    const flat = layer >= 1 && layer <= 4
+    const v = (p, y) => [p.x, y, p.y]
     for (const [a, b, d] of THREE.ShapeUtils.triangulateShape(pts, [])) {
-      for (const k of [a, b, d]) {
-        fillPos.push(pts[k].x, y, pts[k].y)
-        fillNode.push(node)
-        fillLayer.push(layer)
-      }
+      tri(m, v(pts[a], yt), v(pts[b], yt), v(pts[d], yt), node, layer, SHADE.top)
+      if (!flat) tri(m, v(pts[a], yb), v(pts[d], yb), v(pts[b], yb), node, layer, SHADE.under)
     }
     for (let i = 0; i < pts.length; i++) {
       const p = pts[i], q = pts[(i + 1) % pts.length]
-      edgePos.push(p.x, y + 0.005, p.y, q.x, y + 0.005, q.y)
+      if (!flat) {
+        tri(m, v(p, yb), v(q, yb), v(q, yt), node, layer, SHADE.wall)
+        tri(m, v(p, yb), v(q, yt), v(p, yt), node, layer, SHADE.wall)
+      }
+      edgePos.push(p.x, yt + 0.004, p.y, q.x, yt + 0.004, q.y)
       edgeNode.push(node, node)
       edgeLayer.push(layer, layer)
     }
@@ -91,6 +112,8 @@ export function makeChipFloor(data, frame, { unit = 1 } = {}) {
   const vertexShader = `
     attribute float node;
     attribute float layer;
+    attribute float shade;
+    varying float vShade;
     uniform sampler2D states;
     uniform float texW;
     uniform float unit;
@@ -102,6 +125,7 @@ export function makeChipFloor(data, frame, { unit = 1 } = {}) {
     varying vec2 vXZ;
     void main() {
       vLevel = texture2D(states, vec2((node + 0.5) / texW, 0.5)).r;
+      vShade = shade;
       vPulse = texture2D(pulses, vec2((node + 0.5) / texW, 0.5));
       vXZ = position.xz;
       vLayer = layer;
@@ -126,6 +150,7 @@ export function makeChipFloor(data, frame, { unit = 1 } = {}) {
     varying float vLevel;
     varying float vLayer;
     varying float vFade;
+    varying float vShade;
     varying vec4 vPulse;
     varying vec2 vXZ;
     // The node's pulse here: a front at speed·age from its source, fading over its life.
@@ -135,25 +160,25 @@ export function makeChipFloor(data, frame, { unit = 1 } = {}) {
       float d = distance(vXZ, vPulse.yz) - age * pulse.x;
       return exp(-d * d / (pulse.y * pulse.y)) * (1.0 - age / pulse.z) * vPulse.w;
     }`
-  // Fills: each trace filled with its layer's colour, solid while its node
-  // is high, half-opaque and dimmer while low (normal blending, in layer
-  // order: metal over poly over diffusion). Metal, on top and everywhere,
-  // stays a little see-through, so what's under it shows. The pulse warms
-  // the fill a little as it passes.
-  const fillMat = new THREE.ShaderMaterial({
-    uniforms, vertexShader,
-    fragmentShader: `${head}
+  // Fills: each slab in its layer's colour, bright while its node is high
+  // and dim while low, its walls and underside darker. Diffusion and poly
+  // are solid; metal, over everything, is see-through (half while low), so
+  // what's under it shows. The pulse warms the fill a little as it passes.
+  const fillShader = (metal) => `${head}
     void main() {
       ${pick}
       // Linear colour, under the bloom's threshold even when high: the neon is the outlines'.
-      vec3 c = mix(h * 0.045, h * 0.16, vLevel) + h * front() * pulse.w * 0.08 * vFade;
-      float a = l == 0 ? mix(0.35, 0.8, vLevel) : mix(0.5, 0.95, vLevel);
-      gl_FragColor = vec4(c, a);
-    }`,
-    // The layout's y flips to the street's z, which turns the triangles' winding over: seen from above they face away.
-    side: THREE.DoubleSide,
-    depthWrite: false, transparent: true,
+      vec3 c = (mix(h * 0.045, h * 0.16, vLevel) + h * front() * pulse.w * 0.08 * vFade) * vShade;
+      gl_FragColor = vec4(c, ${metal ? 'mix(0.4, 0.85, vLevel)' : '1.0'});
+    }`
+  // The layout's y flips to the street's z, which turns the triangles' winding over: both sides drawn.
+  const fillMat = new THREE.ShaderMaterial({ uniforms, vertexShader, fragmentShader: fillShader(false), side: THREE.DoubleSide })
+  // Over the slab's face, depth-tested against it but writing none, and drawn toward the camera a little.
+  const diffMat = new THREE.ShaderMaterial({
+    uniforms, vertexShader, fragmentShader: fillShader(false), side: THREE.DoubleSide,
+    depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4,
   })
+  const metalMat = new THREE.ShaderMaterial({ uniforms, vertexShader, fragmentShader: fillShader(true), side: THREE.DoubleSide, depthWrite: false, transparent: true })
   // Edges: additive neon outlines, brighter on high nodes.
   const edgeMat = new THREE.ShaderMaterial({
     uniforms, vertexShader,
@@ -168,21 +193,38 @@ export function makeChipFloor(data, frame, { unit = 1 } = {}) {
     }`,
     blending: THREE.AdditiveBlending, depthWrite: false, transparent: true,
   })
-  const geom = (pos, node, layer) => {
+  const geom = (pos, node, layer, shade = null) => {
     const g = new THREE.BufferGeometry()
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
     g.setAttribute('node', new THREE.Float32BufferAttribute(node, 1))
     g.setAttribute('layer', new THREE.Float32BufferAttribute(layer, 1))
+    g.setAttribute('shade', new THREE.Float32BufferAttribute(shade ?? new Array(node.length).fill(1), 1))
     g.computeBoundingSphere()
     return g
   }
   const group = new THREE.Group()
   group.name = 'chip-floor'
-  const fills = new THREE.Mesh(geom(fillPos, fillNode, fillLayer), fillMat)
+  const fills = new THREE.Mesh(geom(solid.pos, solid.node, solid.layer, solid.shade), fillMat)
+  const diffs = new THREE.Mesh(geom(diff.pos, diff.node, diff.layer, diff.shade), diffMat)
+  diffs.renderOrder = -4 // after the slab, before the poly and metal
+  const metals = new THREE.Mesh(geom(metal.pos, metal.node, metal.layer, metal.shade), metalMat)
   const edges = new THREE.LineSegments(geom(edgePos, edgeNode, edgeLayer), edgeMat)
-  fills.renderOrder = -2
+  metals.renderOrder = -2
   edges.renderOrder = -1
-  group.add(fills, edges)
+  // The die: a slab of silicon (chip/stack.js), its face under the layers,
+  // a margin round them (the pads' ring and the saw's edge), standing on
+  // the ground. Its face dark, its sawn sides a little lighter, its edges
+  // drawn, so it reads as a block from off it.
+  const MARGIN = 60 / 4.47 // ~60 µm, body units
+  const slab = { x0: x0 - MARGIN, x1: x1 + MARGIN, z0: z0 - MARGIN, z1: z1 + MARGIN, top: SILICON_Y - 0.03, bottom: DIE_BASE_Y } // its face a little under the diffusion painted on it
+  const slabGeom = new THREE.BoxGeometry(slab.x1 - slab.x0, slab.top - slab.bottom, slab.z1 - slab.z0)
+  const face = new THREE.MeshBasicMaterial({ color: 0x05070c }), side = new THREE.MeshBasicMaterial({ color: 0x252e44 })
+  const silicon = new THREE.Mesh(slabGeom, [side, side, face, face, side, side]) // +x −x +y −y +z −z
+  silicon.renderOrder = -5
+  silicon.position.set((slab.x0 + slab.x1) / 2, (slab.top + slab.bottom) / 2, (slab.z0 + slab.z1) / 2)
+  const rim = new THREE.LineSegments(new THREE.EdgesGeometry(slabGeom), new THREE.LineBasicMaterial({ color: 0x3f8fd0 }))
+  rim.position.copy(silicon.position)
+  group.add(silicon, rim, diffs, fills, metals, edges)
 
   // Street names: the node's name from the netlist, for the HUD.
   const nameOf = {}
@@ -253,6 +295,23 @@ export function makeChipFloor(data, frame, { unit = 1 } = {}) {
         levels[i] = shown[i]
       }
       stateTex.needsUpdate = true
+    },
+    /** The layout's extent in the floor's units (body units): x0, x1, z0, z1. */
+    bounds: { x0, x1, z0, z1 },
+    /** The die's slab: its extent (x0 … z1) and its face's and base's heights (top, bottom). */
+    slab,
+    /** Whether (x, z) is over the die. */
+    onDie: (x, z) => x >= slab.x0 && x <= slab.x1 && z >= slab.z0 && z <= slab.z1,
+    /**
+     * The height to stand at, body units, at a point of the floor (x, z):
+     * the top of the topmost layer there, or the silicon's face; off the
+     * die, the ground it stands on.
+     */
+    heightAt(x, z) {
+      if (x < slab.x0 || x > slab.x1 || z < slab.z0 || z > slab.z1) return DIE_BASE_Y
+      const [cx, cy] = frame.fromParent([x, 0, z])
+      const hit = index.at(cx, cy)
+      return hit ? layerY(hit.layer)[1] : SILICON_Y
     },
     /** What's under a layout point: the topmost layer's node, and its name. */
     probe(cx, cy) {
