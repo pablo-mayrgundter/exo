@@ -14,7 +14,7 @@ import { buildVcpu } from './chip/vcpu.js'
 import { makeChipFloor } from './world/chipfloor.js'
 import { BODY_UM, BODY_PER_LAYOUT, CHIP_UNIT_UM, DIE_GEO, formatLength } from './cosmic/units.js'
 import { makeBar, BAR } from './world/bar.js'
-import { SILICON_Y } from './chip/stack.js'
+import { DIE_BASE_Y } from './chip/stack.js'
 import { makeAbode, ABODE_RATE } from './world/abode.js'
 import { SKY_HOLD_MS } from './world/celestiary-sky.js'
 import { PortalPair, DOOR_STENCIL } from './world/portal.js'
@@ -791,7 +791,25 @@ function interact() {
   if (free >= 0) { sitDown(free); return }
   if (p.distanceTo(car.group.position) < 4.5) { board(); return }
   if (gate.near) { openNetMap(); return }
+  if (besideDie()) { climbDie(); return }
   if (p.distanceTo(bar.max.group.position) < 7) give('max')
+}
+/** Whether you're on the ground by the die's foot: E climbs back up. */
+function besideDie() {
+  const p = avatar.group.position, s = floor.slab
+  if (p.y > s.bottom + 1 || floor.onDie(p.x, p.z)) return false
+  const dx = Math.max(s.x0 - p.x, 0, p.x - s.x1), dz = Math.max(s.z0 - p.z, 0, p.z - s.z1)
+  return Math.hypot(dx, dz) < 6
+}
+/** Up the die's side, onto its face just inside the edge (380 µm of silicon: no jump does it). */
+function climbDie() {
+  const p = avatar.group.position, s = floor.slab
+  p.x = THREE.MathUtils.clamp(p.x, s.x0 + 0.5, s.x1 - 0.5)
+  p.z = THREE.MathUtils.clamp(p.z, s.z0 + 0.5, s.z1 - 0.5)
+  p.y = floor.heightAt(p.x, p.z)
+  fall = 0
+  grounded = true
+  note('Back up on the die: 380 µm of silicon.')
 }
 /** Remote visitors sitting at the bar. */
 function seatedOthers() {
@@ -1056,7 +1074,7 @@ function frame() {
   gate.update(now, side === 0 ? pos : null)
   const nearCar = side === 0 && pos.distanceTo(car.group.position) < 4.5
   const nearSeat = side === 0 && !seatedNow && !riding && barLife.freeSeatNear(pos, takenSeats()) >= 0
-  const action = riding ? 'step off the Art Car' : seatedNow ? 'stand up' : nearSeat ? 'sit' : nearCar ? 'ride the Art Car' : gate.near ? 'jack into NetMap' : null
+  const action = riding ? 'step off the Art Car' : seatedNow ? 'stand up' : nearSeat ? 'sit' : nearCar ? 'ride the Art Car' : gate.near ? 'jack into NetMap' : besideDie() ? 'climb back up the die' : null
   const tip = seatedNow && barLife.mine(barLife.seat) ? 'Click the glass to drink' : null
   const { text: prompt, button } = promptFor({ action, tip }, touch)
   // The prompt shows in the middle for a few seconds, then docks in the
@@ -1408,7 +1426,7 @@ function makeGrid() {
   }))
   m.rotation.x = -Math.PI / 2
   m.scale.setScalar(20000)
-  m.position.y = SILICON_Y - 0.01 // at the silicon's face, under the die's layers
+  m.position.y = DIE_BASE_Y - 0.01 // on the ground, where the die stands
   m.renderOrder = -3
   return m
 }

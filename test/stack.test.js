@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { STACK_UM, STREET_Y, SILICON_Y, layerY, yOf } from '../src/chip/stack.js'
+import { STACK_UM, STREET_Y, SILICON_Y, DIE_BASE_Y, layerY, yOf } from '../src/chip/stack.js'
 import { BODY_UM } from '../src/cosmic/units.js'
 import { makeChipFloor } from '../src/world/chipfloor.js'
 import { Frame } from '../src/cosmic/frames.js'
@@ -34,6 +34,10 @@ describe('standing on the floor', () => {
     const h = floor.heightAt(x, z)
     // The centroid may fall outside a bent polygon; either way it's a layer's top or the silicon.
     expect([STREET_Y, layerY(5)[1], layerY(1)[1], SILICON_Y].some((y) => Math.abs(y - h) < 1e-9)).toBe(true)
-    expect(floor.heightAt(-1e5, -1e5)).toBe(SILICON_Y)
+    // Off the die, the ground it stands on, 380 µm of silicon down.
+    expect(floor.heightAt(-1e5, -1e5)).toBe(DIE_BASE_Y)
+    expect((SILICON_Y - DIE_BASE_Y) * BODY_UM).toBeCloseTo(380, 6)
+    // Just inside the die's sawn edge, clear of every trace: the silicon.
+    expect(floor.heightAt(floor.slab.x0 + 1, floor.slab.z0 + 1)).toBe(SILICON_Y)
   })
 })

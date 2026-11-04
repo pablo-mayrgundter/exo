@@ -40,3 +40,17 @@ export const SILICON_Y = yOf(0)
 
 /** A layer's [bottom, top], body units. */
 export const layerY = (layer) => STACK_UM[layer].map(yOf)
+
+/**
+ * The die itself: a slab of silicon this thick under its face, sawn from a
+ * 3-inch wafer of the time (15 mil, ~380 µm; a die is often lapped a
+ * little thinner before packaging, not done here). It stands on the map's
+ * ground (netmap-ground.js), so the street is ~383 µm over the sea at 0° N
+ * 0° E, and stepping off the die's edge is a fall of 85 body units, some
+ * 46 visitors' heights.
+ */
+export const DIE_THICK_UM = 380
+/** The die's base, where it stands on the ground: body units. */
+export const DIE_BASE_Y = SILICON_Y - DIE_THICK_UM / BODY_UM
+/** The same in the scene's units, micrometres. */
+export const DIE_BASE_UM = DIE_BASE_Y * BODY_UM

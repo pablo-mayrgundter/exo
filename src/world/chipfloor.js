@@ -15,7 +15,7 @@
 // real node settles in well under a millisecond.
 import * as THREE from 'three'
 import { C } from '../theme.js'
-import { layerY, SILICON_Y } from '../chip/stack.js'
+import { layerY, SILICON_Y, DIE_BASE_Y } from '../chip/stack.js'
 
 
 // visual6502's layers: 0 metal, 1 switched diffusion, 2 input diode,
@@ -200,11 +200,19 @@ export function makeChipFloor(data, frame, { unit = 1 } = {}) {
   const edges = new THREE.LineSegments(geom(edgePos, edgeNode, edgeLayer), edgeMat)
   metals.renderOrder = -2
   edges.renderOrder = -1
-  // The silicon: the die's face under it all, dark.
-  const pad = 2
-  const silicon = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0 + 2 * pad, 2, z1 - z0 + 2 * pad), new THREE.MeshBasicMaterial({ color: 0x05070c }))
-  silicon.position.set((x0 + x1) / 2, SILICON_Y - 0.004 - 1, (z0 + z1) / 2)
-  group.add(silicon, fills, metals, edges)
+  // The die: a slab of silicon (chip/stack.js), its face under the layers,
+  // a margin round them (the pads' ring and the saw's edge), standing on
+  // the ground. Its face dark, its sawn sides a little lighter, its edges
+  // drawn, so it reads as a block from off it.
+  const MARGIN = 60 / 4.47 // ~60 µm, body units
+  const slab = { x0: x0 - MARGIN, x1: x1 + MARGIN, z0: z0 - MARGIN, z1: z1 + MARGIN, top: SILICON_Y - 0.004, bottom: DIE_BASE_Y }
+  const slabGeom = new THREE.BoxGeometry(slab.x1 - slab.x0, slab.top - slab.bottom, slab.z1 - slab.z0)
+  const face = new THREE.MeshBasicMaterial({ color: 0x05070c }), side = new THREE.MeshBasicMaterial({ color: 0x252e44 })
+  const silicon = new THREE.Mesh(slabGeom, [side, side, face, face, side, side]) // +x −x +y −y +z −z
+  silicon.position.set((slab.x0 + slab.x1) / 2, (slab.top + slab.bottom) / 2, (slab.z0 + slab.z1) / 2)
+  const rim = new THREE.LineSegments(new THREE.EdgesGeometry(slabGeom), new THREE.LineBasicMaterial({ color: 0x3f8fd0 }))
+  rim.position.copy(silicon.position)
+  group.add(silicon, rim, fills, metals, edges)
 
   // Street names: the node's name from the netlist, for the HUD.
   const nameOf = {}
@@ -276,13 +284,19 @@ export function makeChipFloor(data, frame, { unit = 1 } = {}) {
       }
       stateTex.needsUpdate = true
     },
-    /** The die's extent in the floor's units (body units): x0, x1, z0, z1. */
+    /** The layout's extent in the floor's units (body units): x0, x1, z0, z1. */
     bounds: { x0, x1, z0, z1 },
+    /** The die's slab: its extent (x0 … z1) and its face's and base's heights (top, bottom). */
+    slab,
+    /** Whether (x, z) is over the die. */
+    onDie: (x, z) => x >= slab.x0 && x <= slab.x1 && z >= slab.z0 && z <= slab.z1,
     /**
      * The height to stand at, body units, at a point of the floor (x, z):
-     * the top of the topmost layer there, or the silicon's face.
+     * the top of the topmost layer there, or the silicon's face; off the
+     * die, the ground it stands on.
      */
     heightAt(x, z) {
+      if (x < slab.x0 || x > slab.x1 || z < slab.z0 || z > slab.z1) return DIE_BASE_Y
       const [cx, cy] = frame.fromParent([x, 0, z])
       const hit = index.at(cx, cy)
       return hit ? layerY(hit.layer)[1] : SILICON_Y

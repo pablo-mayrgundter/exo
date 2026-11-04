@@ -106,7 +106,8 @@ export class Controls {
     const cp = Math.cos(this.pitch)
     const off = new THREE.Vector3(Math.sin(this.yaw) * cp, Math.sin(this.pitch), Math.cos(this.yaw) * cp).multiplyScalar(this.dist)
     camera.position.copy(target).add(off)
-    if (camera.position.y < 0.3) camera.position.y = 0.3
+    // Not under the floor you stand on: a little over your feet (the target is your head, 1.5 up).
+    if (camera.position.y < target.y - 1.2) camera.position.y = target.y - 1.2
     camera.lookAt(target)
   }
 }

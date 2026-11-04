@@ -172,6 +172,10 @@ would otherwise rediscover.
   stand on; main.js's `walkTheDie` applies gravity, steps and walls, so an
   avatar set at any y settles onto the floor under it. To test a jump, set
   `exo.controls.input` to walk and add `'Space'` to `exo.controls.keys`.
+  The die is a slab 380 µm thick (`exo.floor.slab`: its extent, `top`,
+  `bottom` at y −85.7) standing on the map's ground; off it `heightAt` is
+  the ground, so a walk off the edge falls ~4 s. Walking speed scales with
+  `controls.dist` (×10 at 250), so reset the zoom before a walking test.
 - **Element ids are global.** The canvas is `#view` (and styled full
   screen); a control named the same quietly becomes the canvas. Check
   `index.html` before naming a new element.

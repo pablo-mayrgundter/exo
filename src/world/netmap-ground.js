@@ -17,6 +17,7 @@
 // leaves it out; ?netmap_src= picks netmap's page as for the gate's window.
 import * as THREE from 'three'
 import { SCENE_UNIT_M } from '../cosmic/units.js'
+import { DIE_BASE_UM } from '../chip/stack.js'
 
 export const GROUND_TIMEOUTS = { load: 30_000, hello: 20_000, frame: 120_000 }
 /** deck's sphere, when a hello doesn't say (netmap's mapView.js DECK_EARTH_RADIUS). */
@@ -31,13 +32,14 @@ export function isGroundHello(hello) {
 
 /**
  * The street's frame (µm; x east, y up, z south; its origin, the NMI pad,
- * at 0° N 0° E on the ground) to ECEF metres on a sphere of `radius`: east
- * is ECEF +y there, up +x, south −z (cosmic/units.js sceneToEcef, on the
- * map's sphere rather than WGS84's).
+ * at 0° N 0° E) to ECEF metres on a sphere of `radius`: east is ECEF +y
+ * there, up +x, south −z (cosmic/units.js sceneToEcef, on the map's sphere
+ * rather than WGS84's). The die stands on the ground, so the ground is at
+ * the die's base, `groundUm` (µm, below the street: chip/stack.js).
  */
-export function worldToEcef(radius = DEFAULT_RADIUS, m = SCENE_UNIT_M) {
+export function worldToEcef(radius = DEFAULT_RADIUS, m = SCENE_UNIT_M, groundUm = DIE_BASE_UM) {
   return new THREE.Matrix4().set(
-    0, m, 0, radius,
+    0, m, 0, radius - m * groundUm,
     m, 0, 0, 0,
     0, 0, -m, 0,
     0, 0, 0, 1)
@@ -48,8 +50,8 @@ export function worldToEcef(radius = DEFAULT_RADIUS, m = SCENE_UNIT_M) {
  * the street, at true scale on the map's sphere, in float64.
  * @param {THREE.Matrix4} matrixWorld the camera's, in the street's units
  */
-export function groundViewMatrix(matrixWorld, radius = DEFAULT_RADIUS) {
-  const m = worldToEcef(radius).multiply(matrixWorld)
+export function groundViewMatrix(matrixWorld, radius = DEFAULT_RADIUS, groundUm = DIE_BASE_UM) {
+  const m = worldToEcef(radius, SCENE_UNIT_M, groundUm).multiply(matrixWorld)
   const p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3()
   m.decompose(p, q, s)
   return new THREE.Matrix4().compose(p, q, new THREE.Vector3(1, 1, 1)).invert().toArray()
