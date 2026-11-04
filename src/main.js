@@ -194,6 +194,12 @@ worker.addEventListener('message', (e) => {
   console.error('The vCPU halted and was reset:', e.data.message)
   note('The vCPU crashed and was power-cycled.')
 })
+// Where the chip's switching happens (chip/switching.js), once, then what
+// switched in each slice: the floor's pulses.
+worker.addEventListener('message', (e) => {
+  if (e.data.type === 'sites') floor.setSites(e.data)
+  else if (e.data.type === 'tick' && e.data.pulses) floor.setPulses(e.data.pulses)
+})
 worker.addEventListener('message', (e) => {
   if (e.data.type !== 'resumed') return
   const ago = Math.round((Date.now() - e.data.saved) / 60000)
@@ -203,6 +209,7 @@ worker.addEventListener('message', (e) => {
 addEventListener('pagehide', () => { worker.postMessage({ type: 'save' }); barLife?.state.save() })
 worker.postMessage({
   type: 'init', data, program: vcpu.bytes, levels: true, persist: params.get('fresh') === null,
+  pulses: params.get('pulses') !== '0', // where switching comes from, for the floor's pulses (?pulses=0: none)
   jobs: [
     { id: 'life', frameAddr: LIFE_ZP.gen, watch: { from: BOARD.a, to: BOARD.b + 256, size: 256 },
       pingpong: { ptr: LIFE_ZP.src + 1, pages: [BOARD.a >> 8, BOARD.b >> 8] } },
