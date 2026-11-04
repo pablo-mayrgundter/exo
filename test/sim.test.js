@@ -28,6 +28,42 @@ describe('Chip6502', () => {
   })
 })
 
+describe('Chip6502, watched for where its changes come from', () => {
+  const prog = [0xa9, 0x00, 0x20, 0x10, 0x00, 0x4c, 0x02, 0x00, 0, 0, 0, 0, 0, 0, 0, 0x40,
+    0xe8, 0x88, 0xe6, 0x0f, 0x38, 0x69, 0x02, 0x60]
+  const run = (traced) => {
+    const chip = new Chip6502(data)
+    prog.forEach((b, i) => { chip.memory[i] = b })
+    if (traced) chip.traceSwitching()
+    chip.reset()
+    for (let i = 0; i < 400; i++) chip.halfStep()
+    return chip
+  }
+  it('runs exactly as it does unwatched', () => {
+    const a = run(false), b = run(true)
+    expect(b.stateString()).toBe(a.stateString())
+    expect([...b.memory.slice(0, 0x200)]).toEqual([...a.memory.slice(0, 0x200)])
+  })
+  it('says which transistor set off each change, and in which wave', () => {
+    const chip = run(true)
+    const { cause, wave, count } = chip.trace
+    // The clock is driven from outside: its changes come from no transistor, in the first wave.
+    const clk = chip.names.clk0
+    expect(count[clk]).toBeGreaterThan(0)
+    expect(cause[clk]).toBe(-1)
+    expect(wave[clk]).toBe(0)
+    // Changes inside the chip: each from a transistor that exists, in a later wave.
+    let caused = 0
+    for (let i = 0; i < chip.nodeCount; i++) {
+      if (!count[i] || cause[i] < 0) continue
+      caused++
+      expect(cause[i]).toBeLessThan(chip.tC1.length)
+      expect(wave[i]).toBeGreaterThan(0)
+    }
+    expect(caused).toBeGreaterThan(500)
+  })
+})
+
 describe('Chip6502 over long runs', () => {
   it('keeps working when its generation marks wrap past 2^32', () => {
     const run = (gen) => {

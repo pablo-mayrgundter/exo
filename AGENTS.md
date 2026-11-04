@@ -161,6 +161,13 @@ would otherwise rediscover.
   rendering change against main, build main in a worktree in the
   scratchpad (`git worktree add …`, link `node_modules`) and serve its
   `dist` on another port.
+- **The chip floor's pulses** start once the worker's `sites` message is in
+  (a few hundred ms after init) and then come with each tick
+  (`exo.floor.setPulses`); `?pulses=0` leaves them out, to A/B a frame.
+  To look at the middle of the die, take the floor's bounds from its
+  geometry (`exo.floor.group.children[1].geometry.boundingBox`, body units:
+  about −20…857 × −19…943) rather than guessing a position: the street
+  outside the bar is at its corner, and little switches there.
 - **Element ids are global.** The canvas is `#view` (and styled full
   screen); a control named the same quietly becomes the canvas. Check
   `index.html` before naming a new element.

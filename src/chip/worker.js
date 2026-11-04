@@ -10,9 +10,15 @@
 // frame counter it issues a receipt: the frame, the cycles that job ran,
 // how many of them were donated, and hashes of the frame's input and
 // output, so anyone can check the work.
+//
+// With `pulses`, each tick also says which nodes switched in the slice,
+// and for each the transistor whose switching set off its last change and
+// the recalc wave it changed in (sim.js `trace`): the floor runs a pulse
+// along the node's traces from there (chipfloor.js).
 import { Chip6502 } from './sim.js'
 import { makeTimer, KERNEL, QUANTUM } from './vcpu.js'
 import * as snapshots from './snapshot.js'
+import { switched, switchingSites } from './switching.js'
 
 const SLICE_MS = 50
 let init = null
@@ -28,6 +34,11 @@ self.onmessage = (e) => {
   if (m.type === 'init') {
     init = m
     resume().then(loop)
+    if (m.pulses) {
+      // Where the switching happens, once: the floor starts each pulse there.
+      const sites = switchingSites(m.data)
+      self.postMessage({ type: 'sites', ...sites }, [sites.transistors.buffer, sites.pads.buffer])
+    }
   } else if (m.type === 'duty') {
     duty = m.duty
     shares = m.shares
@@ -80,6 +91,7 @@ function boot() {
     }
   }
   writeShares()
+  if (init.pulses) chip.traceSwitching()
   chip.reset()
   accum = init.levels ? new Uint16Array(chip.nodeCount) : null
 }
@@ -177,9 +189,11 @@ function slice() {
     accum.fill(0)
     samples = 0
   }
+  const pulses = chip.trace ? switched(chip.trace) : null
   self.postMessage({
     type: 'tick',
     levels,
+    pulses,
     ran: chip.halfCycles - before,
     wallMs: SLICE_MS,
     busyMs: elapsed,
@@ -189,7 +203,7 @@ function slice() {
       id: j.id, view: j.view.slice(), cursor: j.cursor, frame: chip.memory[j.frameAddr],
       ran: j.cycles - ranBy[k], given: j.given,
     })),
-  }, levels ? [levels.buffer] : [])
+  }, [...(levels ? [levels.buffer] : []), ...(pulses ? [pulses.nodes.buffer, pulses.cause.buffer, pulses.wave.buffer, pulses.count.buffer] : [])])
   setTimeout(loop, Math.max(0, SLICE_MS - elapsed))
 }
 

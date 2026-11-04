@@ -80,6 +80,16 @@ export class Chip6502 {
     this.queued = new Uint32Array(n)
     this.queueGen = 0
     this.next = []
+    /**
+     * Where each change came from, when watched (`traceSwitching`): per
+     * node, the transistor whose switching set off its last change (-1: a
+     * pin driven from outside, as the clock), the recalc wave it changed
+     * in (each wave's changes caused by the last's), and how many times it
+     * changed. Bookkeeping only: nothing here changes what the chip does.
+     * @type {{by: Int32Array, cause: Int32Array, wave: Uint8Array, count: Uint16Array} | null}
+     */
+    this.trace = null
+    this.wave = 0
 
     this.memory = new Uint8Array(65536)
     /** @type {((addr: number, value: number) => void) | null} */
@@ -98,9 +108,16 @@ export class Chip6502 {
       if (list.length === 0) return
       this.next = []
       this.queueGen = bump(this.queued, this.queueGen)
+      this.wave = j
       for (let i = 0; i < list.length; i++) this.recalcNode(list[i])
       list = this.next
     }
+  }
+
+  /** Starts (or stops) keeping where each change came from: `trace`. */
+  traceSwitching(on = true) {
+    const n = this.nodeCount
+    this.trace = on ? { by: new Int32Array(n).fill(-1), cause: new Int32Array(n).fill(-1), wave: new Uint8Array(n), count: new Uint16Array(n) } : null
   }
 
   recalcNode(node) {
@@ -109,31 +126,39 @@ export class Chip6502 {
     this.groupLen = 0
     this.addNodeToGroup(node)
     const v = this.groupValue()
-    const { group, state, gatesStart, gates } = this
+    const { group, state, gatesStart, gates, trace } = this
+    // The first wave is the list itself: changes from outside the chip.
+    const by = trace && this.wave > 0 ? trace.by[node] : -1
     for (let g = 0; g < this.groupLen; g++) {
       const i = group[g]
       if (state[i] === v) continue
       state[i] = v
+      if (trace) {
+        trace.cause[i] = by
+        trace.wave[i] = Math.min(255, this.wave)
+        if (trace.count[i] < 65535) trace.count[i]++
+      }
       for (let k = gatesStart[i]; k < gatesStart[i + 1]; k++) {
         const t = gates[k]
         if (v) {
           if (this.tOn[t]) continue
           this.tOn[t] = 1
-          this.addRecalcNode(this.tC1[t])
+          this.addRecalcNode(this.tC1[t], t)
         } else {
           if (!this.tOn[t]) continue
           this.tOn[t] = 0
-          this.addRecalcNode(this.tC1[t])
-          this.addRecalcNode(this.tC2[t])
+          this.addRecalcNode(this.tC1[t], t)
+          this.addRecalcNode(this.tC2[t], t)
         }
       }
     }
   }
 
-  addRecalcNode(nn) {
+  addRecalcNode(nn, t = -1) {
     if (nn === this.gnd || nn === this.pwr) return
     if (this.queued[nn] === this.queueGen) return
     this.queued[nn] = this.queueGen
+    if (this.trace) this.trace.by[nn] = t
     this.next.push(nn)
   }
 

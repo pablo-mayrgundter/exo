@@ -4,6 +4,15 @@
 // die is its true ~3.9 × 4.3 mm), and lit by its node's average voltage
 // over the last 50 ms of simulation, read from a texture the worker
 // updates.
+//
+// And pulses: when a node switches, a front runs out through its traces
+// from where the change came in (the transistor that set it off, or its
+// pad for a change from outside: chip/switching.js), later for a later
+// wave of the half-step's recalculation. Where the front crosses the
+// node's outlines it shows as points of light running along its traces.
+// The sim settles a node at once, so the front's pace is chosen to read
+// (PULSE), not physical: at the avatar's size, with time scaled to it, a
+// real node settles in well under a millisecond.
 import * as THREE from 'three'
 import { C } from '../theme.js'
 
@@ -13,6 +22,12 @@ import { C } from '../theme.js'
 const LAYER_Y = [0.06, 0.02, 0.02, 0.02, 0.02, 0.04]
 const LAYER_HI = [C.cyan, C.yellow, C.yellow, C.green, C.orange, C.magenta]
 const LAYER_LO = [0x0c2a4a, 0x2a2208, 0x2a2208, 0x0b2a12, 0x2a0d08, 0x26082a]
+/**
+ * Pulses: how fast a front runs (body units a second: the die is ~900
+ * across, the avatar 1.84 tall), its width (body units), how long it lasts
+ * (s), the delay per recalc wave (s), and its brightness.
+ */
+export const PULSE = { speed: 25, width: 1.6, life: 5, wave: 0.08, gain: 2.2 }
 
 /**
  * @param {{segdefs: number[][], nodenames: Record<string, number>}} data
@@ -25,6 +40,11 @@ export function makeChipFloor(data, frame, { unit = 1 } = {}) {
   const levels = new Uint8Array(texW)
   const stateTex = new THREE.DataTexture(levels, texW, 1, THREE.RedFormat, THREE.UnsignedByteType)
   stateTex.needsUpdate = true
+  // Per node, its pulse: when it starts (s, floor time), where from (x, z),
+  // and its strength (0: none).
+  const pulses = new Float32Array(texW * 4)
+  const pulseTex = new THREE.DataTexture(pulses, texW, 1, THREE.RGBAFormat, THREE.FloatType)
+  pulseTex.needsUpdate = true
 
   const fillPos = [], fillNode = [], fillLayer = []
   const edgePos = [], edgeNode = [], edgeLayer = []
@@ -64,6 +84,9 @@ export function makeChipFloor(data, frame, { unit = 1 } = {}) {
     lo: { value: LAYER_LO.map((c) => new THREE.Color(c)) },
     gain: { value: 1 },
     unit: { value: unit }, // scene units per body unit, for distance fades
+    pulses: { value: pulseTex },
+    time: { value: 0 },
+    pulse: { value: new THREE.Vector4(PULSE.speed, PULSE.width, PULSE.life, PULSE.gain) },
   }
   const vertexShader = `
     attribute float node;
@@ -71,11 +94,16 @@ export function makeChipFloor(data, frame, { unit = 1 } = {}) {
     uniform sampler2D states;
     uniform float texW;
     uniform float unit;
+    uniform sampler2D pulses;
     varying float vLevel;
     varying float vLayer;
     varying float vFade;
+    varying vec4 vPulse;
+    varying vec2 vXZ;
     void main() {
       vLevel = texture2D(states, vec2((node + 0.5) / texW, 0.5)).r;
+      vPulse = texture2D(pulses, vec2((node + 0.5) / texW, 0.5));
+      vXZ = position.xz;
       vLayer = layer;
       vec4 wp = modelMatrix * vec4(position, 1.0);
       vec4 mv = viewMatrix * wp;
@@ -93,18 +121,37 @@ export function makeChipFloor(data, frame, { unit = 1 } = {}) {
     uniform vec3 hi[6];
     uniform vec3 lo[6];
     uniform float gain;
+    uniform float time;
+    uniform vec4 pulse;
     varying float vLevel;
     varying float vLayer;
-    varying float vFade;`
-  // Fills: translucent layers, low nodes dark, high nodes lit.
+    varying float vFade;
+    varying vec4 vPulse;
+    varying vec2 vXZ;
+    // The node's pulse here: a front at speed·age from its source, fading over its life.
+    float front() {
+      float age = time - vPulse.x;
+      if (vPulse.w <= 0.0 || age < 0.0 || age > pulse.z) return 0.0;
+      float d = distance(vXZ, vPulse.yz) - age * pulse.x;
+      return exp(-d * d / (pulse.y * pulse.y)) * (1.0 - age / pulse.z) * vPulse.w;
+    }`
+  // Fills: each trace filled with its layer's colour, solid while its node
+  // is high, half-opaque and dimmer while low (normal blending, in layer
+  // order: metal over poly over diffusion). Metal, on top and everywhere,
+  // stays a little see-through, so what's under it shows. The pulse warms
+  // the fill a little as it passes.
   const fillMat = new THREE.ShaderMaterial({
     uniforms, vertexShader,
     fragmentShader: `${head}
     void main() {
       ${pick}
-      vec3 c = mix(d, h * 0.6, vLevel);
-      gl_FragColor = vec4(c, l == 0 ? 0.6 : 0.75);
+      // Linear colour, under the bloom's threshold even when high: the neon is the outlines'.
+      vec3 c = mix(h * 0.045, h * 0.16, vLevel) + h * front() * pulse.w * 0.08 * vFade;
+      float a = l == 0 ? mix(0.35, 0.8, vLevel) : mix(0.5, 0.95, vLevel);
+      gl_FragColor = vec4(c, a);
     }`,
+    // The layout's y flips to the street's z, which turns the triangles' winding over: seen from above they face away.
+    side: THREE.DoubleSide,
     depthWrite: false, transparent: true,
   })
   // Edges: additive neon outlines, brighter on high nodes.
@@ -114,6 +161,9 @@ export function makeChipFloor(data, frame, { unit = 1 } = {}) {
     void main() {
       ${pick}
       vec3 c = mix(d * 3.0, h, vLevel) * mix(0.45, 1.0, vLevel) * vFade * gain;
+      // The pulse: the layer's colour, whitened, dimmed with distance and
+      // grazing angle as the outlines are (or the die whitens from orbit).
+      c += mix(h, vec3(1.0), 0.5) * front() * pulse.w * vFade * gain;
       gl_FragColor = vec4(c, 1.0);
     }`,
     blending: THREE.AdditiveBlending, depthWrite: false, transparent: true,
@@ -144,6 +194,20 @@ export function makeChipFloor(data, frame, { unit = 1 } = {}) {
   // Displayed level eases toward the reported average, so changes fade.
   const shown = new Float32Array(texW)
   const target = new Float32Array(texW)
+  let time = 0
+  // When each node may pulse again: a front's life, and a random part of
+  // another, or the nodes that keep switching would all pulse in step.
+  const nextAt = new Float32Array(texW)
+  let sites = null // { transistors, pads }: x, z pairs in the floor's units
+  const toFloor = (xy) => {
+    const out = new Float32Array(xy.length)
+    for (let i = 0; i < xy.length; i += 2) {
+      const [x, , z] = frame.toParent([xy[i], xy[i + 1], 0])
+      out[i] = x
+      out[i + 1] = z
+    }
+    return out
+  }
   return {
     group,
     nodeCount,
@@ -151,7 +215,38 @@ export function makeChipFloor(data, frame, { unit = 1 } = {}) {
     setLevels(lv) { for (let i = 0; i < lv.length && i < texW; i++) target[i] = lv[i] },
     /** The displayed level of a node, 0..1 (what the bar's lights follow). */
     level(n) { return shown[n] / 255 },
+    /** Where the switching happens (layout units, chip/switching.js): pulses start once these are in. */
+    setSites({ transistors, pads }) { sites = { transistors: toFloor(transistors), pads: toFloor(pads) } },
+    /**
+     * The nodes that switched in the last slice (chip/switching.js
+     * `switched`): each one not already pulsing starts a pulse from where its
+     * last change came in, later for a later wave.
+     */
+    setPulses({ nodes, cause, wave }) {
+      if (!sites) return
+      let any = false
+      for (let k = 0; k < nodes.length; k++) {
+        const n = nodes[k]
+        if (n >= texW) continue
+        const o = 4 * n
+        if (time < nextAt[n]) continue // one front at a time
+        const t = cause[k]
+        const src = t >= 0 ? sites.transistors : sites.pads
+        const i = 2 * (t >= 0 ? t : n)
+        pulses[o] = time + wave[k] * PULSE.wave
+        pulses[o + 1] = src[i]
+        pulses[o + 2] = src[i + 1]
+        pulses[o + 3] = 1
+        nextAt[n] = pulses[o] + PULSE.life * (1 + Math.random())
+        any = true
+      }
+      if (any) pulseTex.needsUpdate = true
+    },
+    /** Pulses off (0) or on. */
+    set pulseGain(g) { uniforms.pulse.value.w = g },
     update(dt) {
+      time += dt
+      uniforms.time.value = time
       const k = 1 - Math.exp(-dt * 8)
       for (let i = 0; i < nodeCount; i++) {
         shown[i] += (target[i] - shown[i]) * k
