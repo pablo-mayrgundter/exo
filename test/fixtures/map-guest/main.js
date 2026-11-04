@@ -59,7 +59,7 @@ core.transport.onMessage((msg) => {
   globe.matrixWorldNeedsUpdate = true
   marks.geometry.setFromPoints((v.marks ?? []).map((m) => dir(m.lon, m.lat).multiplyScalar(1.01)))
   renderer.render(scene, camera)
-  core.endFrame({ viewId: msg.viewId })
+  core.endFrame(typeof msg.part === 'string' ? { viewId: msg.viewId, part: msg.part } : { viewId: msg.viewId })
 })
 core.announce({ position: [0, 0, 0], normal: [0, 0, 1], up: [0, 1, 0] })
 

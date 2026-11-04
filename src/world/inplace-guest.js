@@ -18,6 +18,13 @@
 //   layer:hello-ack {accepted}           ◄──  layer:hello  (accepts(hello))
 //   layer:view {viewId, view}            ──►  draws that view
 //   drawInto: replay into the target     ◄──  netgl:batch … frame-end {viewId}
+//
+// A guest can draw other views besides the scene's, as parts (portal-netgl's
+// `part` on a frame-end): `view(body, part)` asks for one, and its frame
+// replays into the part's own render target, cleared first, at its own size,
+// in the same drain as the scene's (netmap's framed globe at the gate,
+// netmap.js). Its frames don't count as the scene's: `ready`, `on` and the
+// latency are the main view's.
 import * as THREE from 'three'
 
 /** A view unanswered this long is sent again, ms. */
@@ -35,10 +42,18 @@ const SIZE_MAX = 4096
  * @param {{load: number, hello: number, frame: number}} o.timeouts ms: to load, to say hello, to draw a first frame
  * @param {number} [o.scale] the frame's pixels per CSS pixel
  * @param {object} [o.screen] portal-netgl's screen policy for its draws (default: its clears dropped)
+ * @param {Record<string, {target: THREE.WebGLRenderTarget, arrived?: (end: object) => void}>} [o.parts]
+ *   views besides the scene's, by part name: each part's frames replay into its target
+ * @param {(parts: Set<string>) => boolean} [o.timeDrain] whether to time the next drain to the GPU's finish ('' in `parts` is the main view)
+ * @param {(d: {parts: Set<string>, ms: number, timed: boolean}) => void} [o.onDrain] after each drain
  * @param {(msg: object, guest: object) => void} [o.onControl] any other message
  */
-export function makeInPlaceGuest({ renderer, name, title, src, origin, accepts, timeouts, scale = 1, screen = { clear: 'none' }, onControl }) {
-  const stats = { status: 'idle', reason: null, origin, hello: null, views: 0, frames: 0, latencyMs: 0, size: [0, 0] }
+export function makeInPlaceGuest({ renderer, name, title, src, origin, accepts, timeouts, scale = 1, screen = { clear: 'none' }, parts = {}, timeDrain, onDrain, onControl }) {
+  const stats = { status: 'idle', reason: null, origin, hello: null, views: 0, frames: 0, partFrames: 0, latencyMs: 0, size: [0, 0] }
+  // Its screen draws test the stencil, so it can be drawn through a doorway
+  // (portal.js): EQUAL 0 over a frame cleared for it, the door's value
+  // (drawInto's `stencil`) through one. The ref is read at each frame's replay.
+  const policy = { ...screen, stencil: { ref: 0, valueMask: 0xff } }
   const perf = { drains: [], latency: [] }
   const keep = (a, v, n = 300) => { a.push(v); if (a.length > n) a.shift() }
   let started = false, failed = false
@@ -49,6 +64,11 @@ export function makeInPlaceGuest({ renderer, name, title, src, origin, accepts, 
   const sentAt = new Map() // viewId → when it was sent
   let lastIn = 0 // the latest view whose frame has come in
   let drawTarget = null // the target its screen replays into (drawInto)
+  let part = null // the part of the frame being replayed (beforeFrame), null for the main view
+  const fresh = new Set() // the parts ('' the main view) of the frames in since the last drain
+  let lastParts = new Set() // those of the last batch, which a drain with nothing new re-runs
+  let sink = null // where a main frame drained with no scene to draw goes (drainParts)
+  const px = new Uint8Array(4)
   const framebufferOf = (rt) => {
     const p = renderer.properties.get(rt)
     return (rt.samples > 0 ? p.__webglMultisampledFramebuffer : null) ?? p.__webglFramebuffer ?? null
@@ -72,6 +92,9 @@ export function makeInPlaceGuest({ renderer, name, title, src, origin, accepts, 
     view,
     ready: (id) => lastIn >= id,
     drawInto,
+    drainParts,
+    /** The parts ('' the main view) of the frames in and not yet drawn. */
+    get fresh() { return fresh },
     post: (msg) => net?.receiver.post(msg),
     dispose,
   }
@@ -121,13 +144,15 @@ export function makeInPlaceGuest({ renderer, name, title, src, origin, accepts, 
     const receiver = core.makeNetGLHostReceiver({
       gl,
       transport: core.iframeTransport(iframe, { origin }),
+      // Each frame's part picks its target.
+      beforeFrame: (end) => { part = end.part && parts[end.part] ? end.part : null },
       replay: {
-        // Its screen is the target the scene is being drawn into.
-        screenFramebuffer: () => (drawTarget ? framebufferOf(drawTarget) : null),
-        screen,
-        // Its screen viewport (its frame's size) to the target's.
+        // Its screen is the target the scene is being drawn into, or its part's.
+        screenFramebuffer: () => framebufferOf(part ? parts[part].target : drawTarget),
+        screen: policy,
+        // Its screen viewport (its frame's size) to the target's; a part's is drawn at its target's size.
         remapScreenViewport: (x, y, w, h) => {
-          if (!drawTarget || !stats.size[0]) return null
+          if (part || !drawTarget || !stats.size[0]) return null
           const sx = drawTarget.width / stats.size[0], sy = drawTarget.height / stats.size[1]
           return [Math.round(x * sx), Math.round(y * sy), Math.round(w * sx), Math.round(h * sy)]
         },
@@ -142,7 +167,7 @@ export function makeInPlaceGuest({ renderer, name, title, src, origin, accepts, 
           clearTimeout(helloTimer)
           if (why) return fail(`${origin}'s guest (${msg.adapter ?? '?'}) ${why}`)
           stats.status = 'loading'
-          later(timeouts.frame, () => { if (!stats.frames) fail(`no frame from ${origin} in ${timeouts.frame / 1000} s`) })
+          later(timeouts.frame, () => { if (!stats.frames && !stats.partFrames) fail(`no frame from ${origin} in ${timeouts.frame / 1000} s`) })
         } else if (msg?.type === 'layer:status' && msg.status === 'error') {
           fail(`${origin}: ${msg.message || 'error'}`)
         }
@@ -150,7 +175,13 @@ export function makeInPlaceGuest({ renderer, name, title, src, origin, accepts, 
       },
       onError: (err) => console.debug(`[${name}] replay error`, err),
     })
-    receiver.onFrame((end) => arrived(end.viewId ?? inFlight?.viewId))
+    receiver.onFrame((end) => {
+      const p = end.part && parts[end.part] ? end.part : ''
+      fresh.add(p)
+      if (!p) return arrived(end.viewId ?? inFlight?.viewId)
+      stats.partFrames += 1
+      parts[p].arrived?.(end)
+    })
     net = { receiver, iframe, timers }
   }
 
@@ -183,8 +214,14 @@ export function makeInPlaceGuest({ renderer, name, title, src, origin, accepts, 
    * adds: `viewport` and `width`/`height`, the frame's pixels). Returns its id,
    * or 0 when there's no guest to ask.
    */
-  function view(body) {
+  function view(body, partName = null) {
     if (!net || stats.status === 'connecting') return 0
+    if (partName) {
+      // A part's view, as the caller made it, size and all.
+      viewId += 1
+      net.receiver.post({ type: 'layer:view', viewId, part: partName, view: body })
+      return viewId
+    }
     const [w, h] = size()
     viewId += 1
     sentAt.set(viewId, performance.now())
@@ -199,26 +236,72 @@ export function makeInPlaceGuest({ renderer, name, title, src, origin, accepts, 
    * Replays the guest's latest frame (or re-runs the last, if no new one has
    * come) into `target`, bound and cleared first (to `clearColor`, else the
    * renderer's), and leaves the target bound. Then draw the scene over it
-   * after clearing depth. Returns whether it drew.
+   * after clearing depth. With `stencil` (a doorway's value, portal.js) it
+   * isn't cleared, and the guest draws only where the stencil holds that.
+   * Returns whether it drew.
    */
-  function drawInto(target, clearColor = null) {
+  function drawInto(target, clearColor = null, { stencil = null } = {}) {
     if (!self.on) return false
-    const t0 = performance.now()
+    // Through a doorway: drawn where the stencil holds its value, over what's there.
+    policy.stencil.ref = stencil ?? 0
+    try { replayInto(target, stencil === null ? clearColor : null, stencil === null) } finally { policy.stencil.ref = 0 }
+    shownAt ??= performance.now()
+    return true
+  }
+
+  /**
+   * Replays the frames in into their parts' targets when no scene is drawn
+   * to take them (a main frame among them goes nowhere). Returns whether
+   * there were parts' frames to replay.
+   */
+  function drainParts() {
+    if (failed || !net || ![...fresh].some(Boolean)) return false
+    sink ??= new THREE.WebGLRenderTarget(1, 1, { depthBuffer: true })
+    replayInto(sink, null)
+    return true
+  }
+
+  function clearTo(target, color, alpha) {
     renderer.setRenderTarget(target) // its framebuffer exists, and is bound
-    const was = clearColor && { c: renderer.getClearColor(new THREE.Color()), a: renderer.getClearAlpha() }
-    if (clearColor) renderer.setClearColor(clearColor, 1)
+    const was = { c: renderer.getClearColor(new THREE.Color()), a: renderer.getClearAlpha() }
+    renderer.setClearColor(color, alpha)
     renderer.clear(true, true, true) // the guest's screen clears are dropped
-    if (was) renderer.setClearColor(was.c, was.a)
+    renderer.setClearColor(was.c, was.a)
+  }
+
+  /** Waits for the GPU: a 1-pixel read of a target of bytes (the scene's may be half floats), then `target` bound again. */
+  function sync(target) {
+    sink ??= new THREE.WebGLRenderTarget(1, 1, { depthBuffer: true })
+    renderer.setRenderTarget(sink) // its framebuffer exists
+    renderer.readRenderTargetPixels(sink, 0, 0, 1, 1, px)
+    renderer.setRenderTarget(target)
+  }
+
+  function replayInto(target, clearColor, clear = true) {
+    const t0 = performance.now()
+    // What this drain replays: the frames in, else the last batch again.
+    const will = fresh.size ? new Set(fresh) : lastParts
+    for (const p of will) if (p) clearTo(parts[p].target, 0x000000, 0)
+    if (!clear) renderer.setRenderTarget(target)
+    else if (clearColor) clearTo(target, clearColor, 1)
+    else clearTo(target, renderer.getClearColor(new THREE.Color()), renderer.getClearAlpha())
+    const timed = !!timeDrain?.(will)
+    if (timed) sync(target) // what was queued before, done
+    const t1 = performance.now()
     drawTarget = target
     renderer.resetState()
     try { net.receiver.drain() } finally {
       drawTarget = null
+      part = null
       renderer.resetState()
       renderer.setRenderTarget(target)
     }
-    shownAt ??= performance.now()
+    if (timed) sync(target)
+    const ms = performance.now() - t1
+    lastParts = will
+    fresh.clear()
     keep(perf.drains, Math.round((performance.now() - t0) * 10) / 10)
-    return true
+    onDrain?.({ parts: will, ms, timed })
   }
 
   function dispose() {
@@ -228,6 +311,7 @@ export function makeInPlaceGuest({ renderer, name, title, src, origin, accepts, 
     net.receiver.stop()
     net.iframe.remove()
     net = null
+    sink?.dispose()
   }
 
   return self
