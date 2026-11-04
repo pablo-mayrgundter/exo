@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  resolveNetMapSrc, isMapHello, gateCamera, mapView, paceMs, NETMAP_MAP_SRC, MAP_FRAME_MS, MAP_SIZE, DIE_MARK,
+  resolveNetMapSrc, isMapHello, gateCamera, mapView, paceMs, NETMAP_MAP_SRC, MAP_FRAME_MS, MAP_PACE_MAX_MS, MAP_SIZE, DIE_MARK,
 } from '../src/world/netmap-window.js'
 import { DIE_GEO } from '../src/cosmic/units.js'
 
@@ -86,7 +86,11 @@ describe('the pace', () => {
   })
   it('keeps a costly guest to its share of the frame time', () => {
     expect(paceMs(50)).toBe(500)
-    expect(paceMs(20_000)).toBe(200_000)
+    expect(paceMs(5_000)).toBe(50_000)
     expect(paceMs(50, 0.5)).toBe(100)
+  })
+  it('but goes no slower than MAP_PACE_MAX_MS, whatever one sample caught', () => {
+    expect(paceMs(20_000)).toBe(MAP_PACE_MAX_MS)
+    expect(paceMs(108_000)).toBe(MAP_PACE_MAX_MS)
   })
 })

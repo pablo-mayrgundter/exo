@@ -89,10 +89,17 @@ export function mapView(t, timeMs, size = MAP_SIZE) {
 }
 
 /**
+ * The slowest the window goes, wall ms between views: a sample that caught
+ * a shader compile (108 s once, on SwiftShader) would otherwise hold it
+ * still for many minutes, until the next sample.
+ */
+export const MAP_PACE_MAX_MS = 60_000
+
+/**
  * Wall ms between views, when a guest frame costs `costMs` of our frame
  * time: at least MAP_FRAME_MS, and slow enough that the guest's frames take
- * about `share` of the time.
+ * about `share` of the time, but no slower than MAP_PACE_MAX_MS.
  */
 export function paceMs(costMs, share = MAP_GPU_SHARE) {
-  return Math.max(MAP_FRAME_MS, Number.isFinite(costMs) && costMs > 0 ? costMs / share : 0)
+  return Math.min(MAP_PACE_MAX_MS, Math.max(MAP_FRAME_MS, Number.isFinite(costMs) && costMs > 0 ? costMs / share : 0))
 }
