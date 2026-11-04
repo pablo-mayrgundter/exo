@@ -54,6 +54,10 @@ export function makeChipFloor(data, frame, { unit = 1 } = {}) {
   // silicon's own face, flat. Metal, on top and everywhere, goes in a mesh
   // of its own, drawn see-through after the rest.
   const solid = { pos: [], node: [], layer: [], shade: [] }
+  // Diffusion is the silicon's own face, its polygons flush and overlapping:
+  // painted in order, with no depth of their own, or they'd fight each
+  // other and the face for every pixel.
+  const diff = { pos: [], node: [], layer: [], shade: [] }
   const metal = { pos: [], node: [], layer: [], shade: [] }
   const edgePos = [], edgeNode = [], edgeLayer = []
   const SHADE = { top: 1, wall: 0.6, under: 0.4 }
@@ -74,7 +78,7 @@ export function makeChipFloor(data, frame, { unit = 1 } = {}) {
       x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z)
     }
     if (pts.length < 3) continue
-    const m = layer === 0 ? metal : solid
+    const m = layer === 0 ? metal : layer === 5 ? solid : diff
     const [yb, yt] = layerY(layer)
     const flat = layer >= 1 && layer <= 4
     const v = (p, y) => [p.x, y, p.y]
@@ -169,6 +173,11 @@ export function makeChipFloor(data, frame, { unit = 1 } = {}) {
     }`
   // The layout's y flips to the street's z, which turns the triangles' winding over: both sides drawn.
   const fillMat = new THREE.ShaderMaterial({ uniforms, vertexShader, fragmentShader: fillShader(false), side: THREE.DoubleSide })
+  // Over the slab's face, depth-tested against it but writing none, and drawn toward the camera a little.
+  const diffMat = new THREE.ShaderMaterial({
+    uniforms, vertexShader, fragmentShader: fillShader(false), side: THREE.DoubleSide,
+    depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4,
+  })
   const metalMat = new THREE.ShaderMaterial({ uniforms, vertexShader, fragmentShader: fillShader(true), side: THREE.DoubleSide, depthWrite: false, transparent: true })
   // Edges: additive neon outlines, brighter on high nodes.
   const edgeMat = new THREE.ShaderMaterial({
@@ -196,6 +205,8 @@ export function makeChipFloor(data, frame, { unit = 1 } = {}) {
   const group = new THREE.Group()
   group.name = 'chip-floor'
   const fills = new THREE.Mesh(geom(solid.pos, solid.node, solid.layer, solid.shade), fillMat)
+  const diffs = new THREE.Mesh(geom(diff.pos, diff.node, diff.layer, diff.shade), diffMat)
+  diffs.renderOrder = -4 // after the slab, before the poly and metal
   const metals = new THREE.Mesh(geom(metal.pos, metal.node, metal.layer, metal.shade), metalMat)
   const edges = new THREE.LineSegments(geom(edgePos, edgeNode, edgeLayer), edgeMat)
   metals.renderOrder = -2
@@ -205,14 +216,15 @@ export function makeChipFloor(data, frame, { unit = 1 } = {}) {
   // the ground. Its face dark, its sawn sides a little lighter, its edges
   // drawn, so it reads as a block from off it.
   const MARGIN = 60 / 4.47 // ~60 µm, body units
-  const slab = { x0: x0 - MARGIN, x1: x1 + MARGIN, z0: z0 - MARGIN, z1: z1 + MARGIN, top: SILICON_Y - 0.004, bottom: DIE_BASE_Y }
+  const slab = { x0: x0 - MARGIN, x1: x1 + MARGIN, z0: z0 - MARGIN, z1: z1 + MARGIN, top: SILICON_Y - 0.03, bottom: DIE_BASE_Y } // its face a little under the diffusion painted on it
   const slabGeom = new THREE.BoxGeometry(slab.x1 - slab.x0, slab.top - slab.bottom, slab.z1 - slab.z0)
   const face = new THREE.MeshBasicMaterial({ color: 0x05070c }), side = new THREE.MeshBasicMaterial({ color: 0x252e44 })
   const silicon = new THREE.Mesh(slabGeom, [side, side, face, face, side, side]) // +x −x +y −y +z −z
+  silicon.renderOrder = -5
   silicon.position.set((slab.x0 + slab.x1) / 2, (slab.top + slab.bottom) / 2, (slab.z0 + slab.z1) / 2)
   const rim = new THREE.LineSegments(new THREE.EdgesGeometry(slabGeom), new THREE.LineBasicMaterial({ color: 0x3f8fd0 }))
   rim.position.copy(silicon.position)
-  group.add(silicon, rim, fills, metals, edges)
+  group.add(silicon, rim, diffs, fills, metals, edges)
 
   // Street names: the node's name from the netlist, for the HUD.
   const nameOf = {}
